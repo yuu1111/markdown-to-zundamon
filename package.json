@@ -5,6 +5,7 @@
 		"preprocess": "bun scripts/preprocess.ts",
 		"studio": "bun scripts/studio.ts",
 		"render": "bun scripts/render.ts",
+		"fetch": "bun scripts/fetch.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "biome check .",
 		"format": "biome check --write --unsafe .",
@@ -16,11 +17,13 @@
 	"license": "ISC",
 	"description": "",
 	"dependencies": {
+		"@mozilla/readability": "^0.6.0",
 		"@remotion/cli": "4.0.431",
 		"@remotion/google-fonts": "4.0.431",
 		"@types/react-syntax-highlighter": "^15.5.13",
 		"budoux": "^0.7.0",
 		"gray-matter": "^4.0.3",
+		"linkedom": "^0.18.12",
 		"mdast-util-to-string": "^4.0.0",
 		"react-markdown": "^10.1.0",
 		"react-syntax-highlighter": "^16.1.1",
@@ -28,6 +31,7 @@
 		"remark-parse": "^11.0.0",
 		"remark-stringify": "^11.0.0",
 		"remotion": "4.0.431",
+		"turndown": "^7.2.2",
 		"unified": "^11.0.5",
 		"zod": "^4.3.6"
 	},
@@ -36,6 +40,7 @@
 		"@types/mdast": "^4.0.4",
 		"@types/node": "^25.3.3",
 		"@types/react": "^19.2.14",
+		"@types/turndown": "^5.0.6",
 		"knip": "^5.85.0",
 		"typescript": "^5.9.3"
 	}

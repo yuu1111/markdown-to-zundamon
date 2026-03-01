@@ -39,8 +39,6 @@ Markdown の記法がそのまま動画の構成になります:
 ```bash
 # リポジトリを取得
 git clone https://github.com/motemen/markdown-to-zundamon.git
-# または
-npx degit motemen/markdown-to-zundamon markdown-to-zundamon
 
 cd markdown-to-zundamon
 bun install

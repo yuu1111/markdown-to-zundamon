@@ -73,7 +73,7 @@ async function synthesize(
 			`VOICEVOX に接続できません (${VOICEVOX_BASE})\n` +
 				`  VOICEVOX が起動しているか確認してください。\n` +
 				`  別のホストで動いている場合は環境変数 VOICEVOX_BASE を設定してください。\n` +
-				`  例: VOICEVOX_BASE=http://192.168.1.100:50021 npm run preprocess -- ...\n` +
+				`  例: VOICEVOX_BASE=http://192.168.1.100:50021 bun run preprocess -- ...\n` +
 				`  原因: ${err instanceof Error ? err.message : err}`,
 		);
 	}
@@ -277,14 +277,17 @@ function copyCharacterImages(characters: Character[]): void {
 			);
 		} else {
 			console.warn(`  [warn] Character image not found: ${charSrc}`);
+			char.hasImage = false;
 		}
 
 		// Copy active images for lip-sync animation (default_active1.png, default_active2.png, ...)
 		const charDir = path.resolve(__dirname, `../characters/${char.name}`);
-		const activeFiles = fs
-			.readdirSync(charDir)
-			.filter((f) => /^default_active\d+\.png$/.test(f))
-			.sort();
+		const activeFiles = fs.existsSync(charDir)
+			? fs
+					.readdirSync(charDir)
+					.filter((f) => /^default_active\d+\.png$/.test(f))
+					.sort()
+			: [];
 		if (activeFiles.length > 0) {
 			char.activeImages = [];
 			for (const file of activeFiles) {
@@ -510,8 +513,8 @@ async function main() {
 	);
 
 	console.log(`\nNext steps:`);
-	console.log(`  Preview: npm run studio -- ${projectName}`);
-	console.log(`  Render:  npm run render -- ${projectName}`);
+	console.log(`  Preview: bun run studio -- ${projectName}`);
+	console.log(`  Render:  bun run render -- ${projectName}`);
 }
 
 main().catch((err) => {

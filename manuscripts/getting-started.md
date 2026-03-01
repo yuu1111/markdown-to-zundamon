@@ -43,11 +43,11 @@ characters:
 > ```bash
 > git clone https://github.com/motemen/markdown-to-zundamon
 > cd markdown-to-zundamon
-> npm install
+> bun install
 > ```
 
 [ずんだもん] セットアップはとっても簡単なのだ！
-[四国めたん] リポジトリをクローンして、<ruby>npm install<rt>エヌピーエム インストール</rt></ruby>するだけね。
+[四国めたん] リポジトリをクローンして、<ruby>bun install<rt>バン インストール</rt></ruby>するだけね。
 
 > ## 原稿を書く
 >
@@ -116,7 +116,7 @@ characters:
 > ### ステップ1: 前処理
 >
 > ```bash
-> npm run preprocess -- manuscripts/my-video.md
+> bun run preprocess -- manuscripts/my-video.md
 > ```
 >
 > Markdownを解析してVOICEVOXで音声を生成
@@ -127,7 +127,7 @@ characters:
 > ### ステップ2: プレビュー
 >
 > ```bash
-> npm run studio -- my-video
+> bun run studio -- my-video
 > ```
 >
 > ブラウザでリアルタイムプレビュー
@@ -138,7 +138,7 @@ characters:
 > ### ステップ3: レンダリング
 >
 > ```bash
-> npm run render -- my-video
+> bun run render -- my-video
 > ```
 >
 > `out/my-video.mp4` に出力！
