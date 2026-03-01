@@ -174,7 +174,7 @@ export const ZundamonComposition: React.FC<Record<string, unknown>> = (
 						overflowSide={char.overflowX}
 						height={char.height}
 					/>
-			))}
+				))}
 
 			{/* Subtitle */}
 			{currentSpeechText && (
