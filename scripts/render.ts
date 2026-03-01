@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const projectName = process.argv[2];
-if (!projectName) {
+const rawArg = process.argv[2];
+if (!rawArg) {
 	console.error("Usage: bun run render -- <project-name>");
 	console.error("Example: bun run render -- example");
 	process.exit(1);
 }
+const projectName = path.basename(rawArg, path.extname(rawArg));
 
 const manifestPath = path.resolve(
 	__dirname,
