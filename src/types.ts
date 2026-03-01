@@ -11,6 +11,7 @@ export const CharacterSchema = z.object({
 	overflowX: z.number().default(0.1),
 	height: z.number().default(800),
 	activeImages: z.array(z.string()).optional(),
+	hasImage: z.boolean().default(true),
 });
 
 export const ManifestConfigSchema = z.object({

@@ -158,20 +158,22 @@ export const ZundamonComposition: React.FC<Record<string, unknown>> = (
 			)}
 
 			{/* Characters */}
-			{config.characters.map((char) => (
-				<CharacterDisplay
-					key={char.name}
-					isSpeaking={currentSpeechCharacter === char.name}
-					imageSrc={`characters/${char.name}/default.png`}
-					activeImageSrcs={char.activeImages?.map(
-						(img) => `characters/${char.name}/${img}`,
-					)}
-					position={char.position}
-					flip={char.flip}
-					overflowBottom={char.overflowY}
-					overflowSide={char.overflowX}
-					height={char.height}
-				/>
+			{config.characters
+				.filter((char) => char.hasImage !== false)
+				.map((char) => (
+					<CharacterDisplay
+						key={char.name}
+						isSpeaking={currentSpeechCharacter === char.name}
+						imageSrc={`characters/${char.name}/default.png`}
+						activeImageSrcs={char.activeImages?.map(
+							(img) => `characters/${char.name}/${img}`,
+						)}
+						position={char.position}
+						flip={char.flip}
+						overflowBottom={char.overflowY}
+						overflowSide={char.overflowX}
+						height={char.height}
+					/>
 			))}
 
 			{/* Subtitle */}
