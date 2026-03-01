@@ -1,66 +1,94 @@
-# markdown-to-zundamon
+# CLAUDE.md
 
-Markdownからずんだもん解説動画を生成するプロジェクト。Remotionベース。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 前提条件
+## プロジェクト概要
 
-- Bun
-- VOICEVOX が `localhost:50021` で起動していること（前処理時）
-- LLM API キー（fetch 時）: `.env` に `GOOGLE_GENERATIVE_AI_API_KEY` 等を設定
+Markdownファイルからずんだもん風の解説動画を自動生成するCLIツール。VOICEVOXで音声合成し、Remotionで動画をレンダリングする。
 
-## ビルド・実行手順
+## コマンド
 
 ```bash
-# 0. 記事URLから台本を生成 → projects/<name>.md
-bun run fetch -- https://example.com/article
+# 前処理: Markdown → VOICEVOX音声合成 → manifest.json生成
+bun run preprocess -- <name>.md
 
-# 1. 前処理: Markdown解析 + VOICEVOX音声生成 → public/<project>/manifest.json
-bun run preprocess -- projects/my-video.md
+# URL記事取得 → LLMで台本生成 → projects/<name>.md
+bun run fetch -- <url>
 
-# 2. プレビュー
-bun run studio -- my-video
+# Remotion Studioでプレビュー
+bun run studio -- <name>
 
-# 3. レンダリング → out/<project>.mp4
-bun run render -- my-video
+# MP4レンダリング
+bun run render -- <name>
+
+# 型チェック
+bun run typecheck
+
+# Lint (Biome)
+bun run lint
+
+# フォーマット (Biome, auto-fix)
+bun run format
+
+# 未使用コード/依存検出
+bun run knip
 ```
 
-fetch でモデルを指定する場合:
-
-```bash
-bun run fetch -- https://example.com/article -m anthropic:claude-sonnet-4-20250514
-```
+ランタイムはBun。`npm`や`node`は使わない。Remotion CLIは`bunx`経由で実行される。テストフレームワークは未導入。
 
 ## アーキテクチャ
 
-2フェーズ構成:
-1. **前処理** (`scripts/preprocess.ts`): Markdown → VOICEVOX音声生成 → JSONマニフェスト
-2. **動画生成** (`src/`): マニフェストを読み込み、Remotionで音声・字幕・スライド・キャラ画像を合成
+### 2フェーズパイプライン
 
-- blockquote → スライド表示
-- それ以外のテキスト → ずんだもんが喋る（VOICEVOX）
+**Phase 1: 前処理** (`scripts/preprocess.ts`)
+```
+Markdown → gray-matter(frontmatter) → remark(AST)
+  → blockquote → スライドセグメント
+  → paragraph → 話者タグ[キャラ名]解析 → speech/pauseセグメント
+  → VOICEVOX API → WAV生成(sha256ハッシュでキャッシュ)
+  → manifest.json + 音声/画像を public/projects/<name>/ へ出力
+```
 
-## ファイル構成
+**Phase 2: Remotion動画合成** (`src/`)
+```
+Root.tsx → manifest.json読込 → Composition.tsx
+  → タイムライン構築 → Audio/SlideContent/CharacterDisplay/Subtitle描画
+```
 
-- `scripts/fetch.ts` - 記事URL→LLM台本生成スクリプト
-- `scripts/lib/llm.ts` - LLMプロバイダー解決・テキスト生成
-- `scripts/lib/prompt.ts` - 台本生成用プロンプト構築
-- `scripts/preprocess.ts` - 前処理スクリプト
-- `scripts/studio.ts` - Remotion Studio 起動ヘルパースクリプト
-- `scripts/render.ts` - レンダリングヘルパースクリプト
-- `projects/` - fetch で生成した台本MD（生成物、gitignore）
-- `src/index.ts` - Remotion registerRoot
-- `src/Root.tsx` - Composition登録（calculateMetadata で動的マニフェスト読み込み）
-- `src/Composition.tsx` - メイン合成コンポーネント
-- `src/components/` - UI コンポーネント群
-- `src/types.ts` - 型定義
-- `public/<project>/manifest.json` - 前処理出力（生成物）
-- `public/<project>/audio/` - 生成された音声ファイル（生成物）
-- `public/<project>/images/` - スライド用画像（生成物）
-- `public/characters/default.png` - ずんだもんキャラ画像（共有、生成物）
-- `characters/` - キャラクター画像（ソース）
-- `out/<project>.mp4` - レンダリング出力（生成物）
+**LLM台本生成** (`scripts/fetch.ts`、オプション)
+```
+URL → readability(記事抽出) → turndown(HTML→MD) → AI SDK(LLM) → projects/<name>.md
+```
 
-## コーディング規約
+### 主要モジュール
 
-- TypeScript strict
-- Remotion のコンポーネント規約に従う
+- `src/types.ts` — Zodスキーマによるデータ型定義(Manifest, Segment, Character等)。全データ構造の単一真実源
+- `scripts/preprocess.ts` — Markdown AST走査、VOICEVOX呼出、manifest生成。話者は段落内で継承される
+- `scripts/lib/llm.ts` — AI SDK統合。`provider:model`形式(例: `google:gemini-2.5-flash`)で動的にプロバイダーをimport
+- `src/Composition.tsx` — タイムライン駆動のRemotionコンポジション。フォントの非同期ロード + delayRender
+- `src/components/CharacterDisplay.tsx` — リップシンク(4フレームごと画像切替) + バウンスアニメーション
+- `src/components/SlideContent.tsx` — react-markdown + react-syntax-highlighter でスライド描画
+- `src/components/Subtitle.tsx` — BudouXで日本語分かち書き + ストロークテキスト
+
+### ファイル構成規約
+
+- `characters/<キャラ名>/` — 元画像(default.png必須、default_active1/2.pngはリップシンク用)
+- `manuscripts/` — 台本Markdownのテンプレート/サンプル
+- `projects/` — LLM生成台本の出力先(gitignored)
+- `public/projects/<name>/` — 前処理の生成物(manifest.json, audio/, images/)
+- `out/<name>.mp4` — レンダリング出力
+
+## 環境変数
+
+`.env.example`を`.env`にコピーして設定する。
+
+- `VOICEVOX_BASE` — VOICEVOX APIのベースURL(デフォルト: `http://localhost:50021`)
+- `GOOGLE_GENERATIVE_AI_API_KEY` — fetchコマンドに必要
+- `LLM_MODEL` — LLMモデル指定(デフォルト: `google:gemini-2.5-flash`)
+
+## コード規約
+
+- Biome v2: タブインデント、ダブルクォート
+- Zodでの外部データバリデーション(manifest, frontmatter, composition props)
+- 音声ファイル名: `sha256(text)[0:8]-sanitized(text)[0:20].wav` でキャッシュキーとして機能
+- Remotion staticFile()は`public/`相対パス
