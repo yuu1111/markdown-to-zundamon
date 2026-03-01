@@ -1,32 +1,39 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	copyLocalImage,
+	downloadRemoteImage,
+	sanitizeForFilename,
+	shortHash,
+} from "@markdown-to-zundamon/core/assets";
+import {
+	CHARACTERS_DIR,
+	VIDEO_PUBLIC_DIR,
+} from "@markdown-to-zundamon/core/paths";
+import type {
+	Character,
+	Manifest,
+	Segment,
+} from "@markdown-to-zundamon/core/types";
+import { ManifestConfigSchema } from "@markdown-to-zundamon/core/types";
 import matter from "gray-matter";
 import type { Blockquote, Nodes } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
-import type { Character, Manifest, Segment } from "../src/types";
-import { ManifestConfigSchema } from "../src/types";
+import { createTtsEngine } from "./tts/engine";
 
-const VOICEVOX_BASE = process.env.VOICEVOX_BASE ?? "http://localhost:50021";
-const COEIROINK_BASE = process.env.COEIROINK_BASE ?? "http://localhost:50032";
+/**
+ * @description preprocess の出力先ディレクトリ(video パッケージの public/projects)
+ */
+const BASE_PUBLIC_DIR = path.join(VIDEO_PUBLIC_DIR, "projects");
 
-const BASE_PUBLIC_DIR = path.resolve(import.meta.dir, "../public/projects");
-
-function sanitizeForFilename(text: string): string {
-	return text
-		.slice(0, 20)
-		.replace(/[/\\:*?"<>|.\s]/g, "_")
-		.replace(/_+/g, "_")
-		.replace(/_$/, "");
-}
-
-function shortHash(text: string): string {
-	return new Bun.CryptoHasher("sha256").update(text).digest("hex").slice(0, 8);
-}
-
-/** Parse WAV header to get duration in seconds */
+/**
+ * @description WAV ヘッダを解析して再生時間(秒)を返す
+ * @param filePath - WAV ファイルのパス
+ * @returns 再生時間(秒)
+ */
 function getWavDurationSec(filePath: string): number {
 	const buf = fs.readFileSync(filePath);
 	const byteRate = buf.readUInt32LE(28);
@@ -43,121 +50,10 @@ function getWavDurationSec(filePath: string): number {
 }
 
 /**
- * @description VOICEVOX API で WAV バイト列を取得する
- * @param text - 合成するテキスト
- * @param speakerId - VOICEVOX の話者ID
- * @returns WAV バイナリ
- */
-async function synthesizeVoicevox(
-	text: string,
-	speakerId: number,
-): Promise<ArrayBuffer> {
-	let queryRes: Response;
-	try {
-		queryRes = await fetch(
-			`${VOICEVOX_BASE}/audio_query?text=${encodeURIComponent(text)}&speaker=${speakerId}`,
-			{ method: "POST" },
-		);
-	} catch (err) {
-		throw new Error(
-			`VOICEVOX に接続できません (${VOICEVOX_BASE})\n` +
-				`  VOICEVOX が起動しているか確認してください。\n` +
-				`  別のホストで動いている場合は環境変数 VOICEVOX_BASE を設定してください。\n` +
-				`  例: VOICEVOX_BASE=http://192.168.1.100:50021 bun run preprocess -- ...\n` +
-				`  原因: ${err instanceof Error ? err.message : err}`,
-		);
-	}
-	if (!queryRes.ok) {
-		const body = await queryRes.text();
-		throw new Error(
-			`VOICEVOX audio_query が失敗しました (speaker=${speakerId}, text="${text.slice(0, 30)}...")\n` +
-				`  ステータス: ${queryRes.status}\n` +
-				`  レスポンス: ${body}`,
-		);
-	}
-	const audioQuery = await queryRes.json();
-
-	let synthRes: Response;
-	try {
-		synthRes = await fetch(`${VOICEVOX_BASE}/synthesis?speaker=${speakerId}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(audioQuery),
-		});
-	} catch (err) {
-		throw new Error(
-			`VOICEVOX synthesis リクエストに失敗しました (${VOICEVOX_BASE})\n` +
-				`  原因: ${err instanceof Error ? err.message : err}`,
-		);
-	}
-	if (!synthRes.ok) {
-		const body = await synthRes.text();
-		throw new Error(
-			`VOICEVOX synthesis が失敗しました (speaker=${speakerId})\n` +
-				`  ステータス: ${synthRes.status}\n` +
-				`  レスポンス: ${body}`,
-		);
-	}
-
-	return await synthRes.arrayBuffer();
-}
-
-/**
- * @description Coeiroink API で WAV バイト列を取得する
- * @param text - 合成するテキスト
- * @param speakerUuid - Coeiroink の話者UUID
- * @param styleId - Coeiroink のスタイルID
- * @returns WAV バイナリ
- */
-async function synthesizeCoeiroink(
-	text: string,
-	speakerUuid: string,
-	styleId: number,
-): Promise<ArrayBuffer> {
-	let synthRes: Response;
-	try {
-		synthRes = await fetch(`${COEIROINK_BASE}/v1/synthesis`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				speakerUuid,
-				styleId,
-				text,
-				speedScale: 1.0,
-				volumeScale: 1.0,
-				pitchScale: 0,
-				intonationScale: 1.0,
-				prePhonemeLength: 0.1,
-				postPhonemeLength: 0.1,
-				outputSamplingRate: 44100,
-			}),
-		});
-	} catch (err) {
-		throw new Error(
-			`Coeiroink に接続できません (${COEIROINK_BASE})\n` +
-				`  Coeiroink が起動しているか確認してください。\n` +
-				`  別のホストで動いている場合は環境変数 COEIROINK_BASE を設定してください。\n` +
-				`  例: COEIROINK_BASE=http://192.168.1.100:50032 bun run preprocess -- ...\n` +
-				`  原因: ${err instanceof Error ? err.message : err}`,
-		);
-	}
-	if (!synthRes.ok) {
-		const body = await synthRes.text();
-		throw new Error(
-			`Coeiroink synthesis が失敗しました (speakerUuid=${speakerUuid}, styleId=${styleId})\n` +
-				`  ステータス: ${synthRes.status}\n` +
-				`  レスポンス: ${body}`,
-		);
-	}
-
-	return await synthRes.arrayBuffer();
-}
-
-/**
  * @description テキストを音声合成して WAV ファイルを生成する(キャッシュ対応)
  * @param text - 合成するテキスト
  * @param character - キャラクター設定
- * @param engine - 使用する TTS エンジン
+ * @param engine - 使用する TTS エンジン種別
  * @param audioDir - 音声ファイルの出力ディレクトリ
  * @param projectName - プロジェクト名
  * @returns 音声ファイルのパスと再生時間
@@ -188,14 +84,8 @@ async function synthesize(
 		};
 	}
 
-	const wavBuffer =
-		engine === "coeiroink"
-			? await synthesizeCoeiroink(
-					text,
-					character.speakerUuid as string,
-					character.styleId as number,
-				)
-			: await synthesizeVoicevox(text, character.speakerId as number);
+	const ttsEngine = createTtsEngine(engine);
+	const wavBuffer = await ttsEngine.synthesize(text, character);
 
 	await Bun.write(audioPath, wavBuffer);
 	console.log(`  [synth] ${filename}`);
@@ -208,8 +98,11 @@ async function synthesize(
 }
 
 /**
- * Walk AST to find image nodes, copy/download referenced files to public/<project>/images/,
- * and rewrite URLs to be relative to public/.
+ * @description AST を走査して画像ノードを処理し、URL を書き換える
+ * @param node - 走査対象の AST ノード
+ * @param mdDir - Markdown ファイルのディレクトリ
+ * @param imagesDir - 画像保存先ディレクトリ
+ * @param projectName - プロジェクト名
  */
 async function processImages(
 	node: Nodes,
@@ -221,35 +114,18 @@ async function processImages(
 		const url: string = node.url;
 
 		if (url.startsWith("http://") || url.startsWith("https://")) {
-			// Download remote image
-			const hash = shortHash(url);
-			const urlPath = new URL(url).pathname;
-			const ext = path.extname(urlPath) || ".jpg";
-			const destName = `${hash}${ext}`;
-
-			fs.mkdirSync(imagesDir, { recursive: true });
-			const destPath = path.join(imagesDir, destName);
-
-			if (!(await Bun.file(destPath).exists())) {
-				const res = await fetch(url);
-				if (!res.ok) {
-					console.warn(`  [warn] Failed to download image: ${url}`);
-					return;
-				}
-				await Bun.write(destPath, await res.arrayBuffer());
+			const destName = await downloadRemoteImage(url, imagesDir);
+			if (destName) {
 				console.log(
 					`  [image] ${url} → projects/${projectName}/images/${destName}`,
 				);
-			} else {
-				console.log(`  [cache] projects/${projectName}/images/${destName}`);
+				node.url = `projects/${projectName}/images/${destName}`;
 			}
-
-			node.url = `projects/${projectName}/images/${destName}`;
 		} else {
 			// Local image: resolve from MD directory, then fallback to public/
 			let srcPath = path.resolve(mdDir, url);
 			if (!(await Bun.file(srcPath).exists())) {
-				const publicPath = path.resolve(import.meta.dir, "../public", url);
+				const publicPath = path.resolve(VIDEO_PUBLIC_DIR, url);
 				if (await Bun.file(publicPath).exists()) {
 					srcPath = publicPath;
 				} else {
@@ -258,19 +134,11 @@ async function processImages(
 				}
 			}
 
-			const hash = shortHash(srcPath);
-			const ext = path.extname(srcPath);
-			const baseName = path.basename(srcPath, ext);
-			const destName = `${hash}-${sanitizeForFilename(baseName)}${ext}`;
-
-			fs.mkdirSync(imagesDir, { recursive: true });
-			const destPath = path.join(imagesDir, destName);
-			await Bun.write(destPath, Bun.file(srcPath));
+			const destName = await copyLocalImage(srcPath, imagesDir);
 			console.log(
 				`  [image] ${path.basename(srcPath)} → ${projectName}/images/${destName}`,
 			);
 
-			// Rewrite URL to public-relative path for staticFile()
 			node.url = `projects/${projectName}/images/${destName}`;
 		}
 	}
@@ -282,14 +150,20 @@ async function processImages(
 	}
 }
 
-/** Convert a blockquote AST node back to markdown string */
+/**
+ * @description blockquote AST ノードを Markdown 文字列に変換する
+ * @param node - blockquote ノード
+ * @param mdDir - Markdown ファイルのディレクトリ
+ * @param imagesDir - 画像保存先ディレクトリ
+ * @param projectName - プロジェクト名
+ * @returns Markdown 文字列
+ */
 async function blockquoteToMarkdown(
 	node: Blockquote,
 	mdDir: string,
 	imagesDir: string,
 	projectName: string,
 ): Promise<string> {
-	// Process images before serializing
 	await processImages(node, mdDir, imagesDir, projectName);
 	const processor = unified().use(remarkStringify);
 	const virtualRoot = { type: "root" as const, children: node.children };
@@ -297,9 +171,9 @@ async function blockquoteToMarkdown(
 }
 
 /**
- * Process <ruby> tags to separate display text and speech text (reading).
- * <ruby>表示<rt>よみ</rt></ruby> → displayText: "表示", speechText: "よみ"
- * Also handles optional <rp> tags.
+ * @description <ruby> タグを処理して表示テキストと読みテキストを分離する
+ * @param text - 処理対象のテキスト
+ * @returns 表示テキストと読みテキスト
  */
 function processRubyTags(text: string): {
 	displayText: string;
@@ -311,9 +185,16 @@ function processRubyTags(text: string): {
 	return { displayText, speechText };
 }
 
-/** Parse [pause: 500ms] directives from text, returning speech lines and pause segments */
+/**
+ * @description [pause: 500ms] ディレクティブのパターン
+ */
 const PAUSE_RE = /^\[pause:\s*(\d+)(ms|s)\]$/;
 
+/**
+ * @description テキスト行から pause ディレクティブをパースする
+ * @param line - 対象行
+ * @returns パース結果。pause でなければ null
+ */
 function parsePauseDirective(
 	line: string,
 ): { type: "pause"; ms: number } | null {
@@ -324,20 +205,30 @@ function parsePauseDirective(
 	return { type: "pause", ms };
 }
 
-/** Parse speaker tag [キャラ名] from the beginning of a line */
+/**
+ * @description [キャラ名] 形式の話者タグのパターン
+ */
 const SPEAKER_TAG_RE = /^\[(.+?)\]\s*/;
 
+/**
+ * @description 行頭の話者タグをパースする
+ * @param line - 対象行
+ * @returns キャラクター名とテキスト。話者タグでなければ null
+ */
 function parseSpeakerTag(
 	line: string,
 ): { character: string; text: string } | null {
 	const m = line.match(SPEAKER_TAG_RE);
 	if (!m?.[1]) return null;
-	// Don't match pause directives
 	if (PAUSE_RE.test(line.trim())) return null;
 	return { character: m[1], text: line.slice(m[0].length) };
 }
 
-/** Build a map from character name to Character config */
+/**
+ * @description キャラクター配列から名前引き用の Map を構築する
+ * @param characters - キャラクター配列
+ * @returns 名前 → Character の Map
+ */
 function buildCharacterMap(characters: Character[]): Map<string, Character> {
 	const map = new Map<string, Character>();
 	for (const c of characters) {
@@ -346,16 +237,18 @@ function buildCharacterMap(characters: Character[]): Map<string, Character> {
 	return map;
 }
 
-/** Copy character images to public directory */
+/**
+ * @description キャラクター画像を video パッケージの public/ にコピーする
+ * @param characters - キャラクター配列
+ */
 async function copyCharacterImages(characters: Character[]): Promise<void> {
 	for (const char of characters) {
-		const charSrc = path.resolve(
-			import.meta.dir,
-			`../characters/${char.name}/default.png`,
-		);
-		const charDst = path.resolve(
-			import.meta.dir,
-			`../public/characters/${char.name}/default.png`,
+		const charSrc = path.join(CHARACTERS_DIR, char.name, "default.png");
+		const charDst = path.join(
+			VIDEO_PUBLIC_DIR,
+			"characters",
+			char.name,
+			"default.png",
 		);
 		if (await Bun.file(charSrc).exists()) {
 			fs.mkdirSync(path.dirname(charDst), { recursive: true });
@@ -368,8 +261,8 @@ async function copyCharacterImages(characters: Character[]): Promise<void> {
 			char.hasImage = false;
 		}
 
-		// Copy active images for lip-sync animation (default_active1.png, default_active2.png, ...)
-		const charDir = path.resolve(import.meta.dir, `../characters/${char.name}`);
+		// Copy active images for lip-sync animation
+		const charDir = path.join(CHARACTERS_DIR, char.name);
 		const activeFiles = (await Bun.file(charDir).exists())
 			? fs
 					.readdirSync(charDir)
@@ -380,9 +273,11 @@ async function copyCharacterImages(characters: Character[]): Promise<void> {
 			char.activeImages = [];
 			for (const file of activeFiles) {
 				const activeSrc = path.join(charDir, file);
-				const activeDst = path.resolve(
-					import.meta.dir,
-					`../public/characters/${char.name}/${file}`,
+				const activeDst = path.join(
+					VIDEO_PUBLIC_DIR,
+					"characters",
+					char.name,
+					file,
 				);
 				await Bun.write(activeDst, Bun.file(activeSrc));
 				char.activeImages.push(file);
@@ -395,14 +290,13 @@ async function copyCharacterImages(characters: Character[]): Promise<void> {
 async function main() {
 	const mdPath = process.argv[2];
 	if (!mdPath) {
-		console.error("Usage: ts-node scripts/preprocess.ts <markdown-file>");
+		console.error("Usage: bun run preprocess -- <markdown-file>");
 		process.exit(1);
 	}
 
 	const resolvedMdPath = path.resolve(mdPath);
 	const mdDir = path.dirname(resolvedMdPath);
 
-	// Derive project name from input filename (without extension)
 	const projectName = path.basename(
 		resolvedMdPath,
 		path.extname(resolvedMdPath),
@@ -416,26 +310,12 @@ async function main() {
 	const raw = await Bun.file(resolvedMdPath).text();
 	const { data: frontmatter, content: mdContent } = matter(raw);
 
-	// Merge config from frontmatter (ManifestConfigSchema provides defaults)
 	const config = ManifestConfigSchema.parse(frontmatter);
 
 	// エンジン別のキャラクター設定バリデーション
+	const ttsEngine = createTtsEngine(config.engine);
 	for (const char of config.characters) {
-		if (config.engine === "coeiroink") {
-			if (!char.speakerUuid || char.styleId == null) {
-				throw new Error(
-					`Coeiroink エンジンではキャラクター "${char.name}" に speakerUuid と styleId が必要です。\n` +
-						`  frontmatter の characters で speakerUuid と styleId を指定してください。`,
-				);
-			}
-		} else {
-			if (char.speakerId == null) {
-				throw new Error(
-					`VOICEVOX エンジンではキャラクター "${char.name}" に speakerId が必要です。\n` +
-						`  frontmatter の characters で speakerId を指定してください。`,
-				);
-			}
-		}
+		ttsEngine.validateCharacter(char);
 	}
 
 	// Default position for characters[1] is "left" (if not explicitly set)
@@ -453,9 +333,7 @@ async function main() {
 
 	const segments: Segment[] = [];
 
-	// Build character map for speaker tag resolution
 	const characterMap = buildCharacterMap(config.characters);
-	// When only one character, use it as default (no tag needed)
 	const defaultCharacter =
 		config.characters.length === 1 ? config.characters[0] : undefined;
 
@@ -471,7 +349,6 @@ async function main() {
 				projectName,
 			);
 			console.log(`[slide] ${text.slice(0, 40)}...`);
-			// Add transition pause before slide (except for the first segment)
 			const slideTransitionFrames = Math.ceil(
 				(config.slideTransitionMs / 1000) * config.fps,
 			);
@@ -493,7 +370,6 @@ async function main() {
 			const fullText = mdastToString(node).trim();
 			if (!fullText) continue;
 
-			// Insert paragraph gap if previous node produced speech
 			if (prevNodeHadSpeech) {
 				const paragraphGapFrames = Math.ceil(
 					(config.paragraphGapMs / 1000) * config.fps,
@@ -507,14 +383,12 @@ async function main() {
 				}
 			}
 
-			// Each line is a separate speech segment; [pause: ...] is a directive
 			const lines = fullText.split("\n");
 			const speechGapFrames = Math.ceil(
 				(config.speechGapMs / 1000) * config.fps,
 			);
 			let speechCount = 0;
 
-			// Track current speaker within a paragraph
 			let currentCharacter: Character | undefined = defaultCharacter;
 
 			for (const line of lines) {
@@ -530,9 +404,8 @@ async function main() {
 						text: "",
 						durationInFrames,
 					});
-					speechCount = 0; // reset so next speech doesn't get a gap
+					speechCount = 0;
 				} else {
-					// Parse speaker tag
 					let speechText = trimmed;
 
 					const speakerTag = parseSpeakerTag(trimmed);
@@ -549,16 +422,12 @@ async function main() {
 							currentCharacter = defaultCharacter;
 						}
 					}
-					// Lines without a speaker tag inherit the current speaker
 
-					// Skip lines with no speech text (speaker tag only)
 					if (!speechText.trim()) continue;
 
-					// Process <ruby> tags: display text for subtitles, speech text for TTS
 					const { displayText, speechText: ttsText } =
 						processRubyTags(speechText);
 
-					// Insert gap between consecutive speech lines
 					if (speechCount > 0 && speechGapFrames > 0) {
 						segments.push({
 							type: "pause",
@@ -594,7 +463,6 @@ async function main() {
 		}
 	}
 
-	// Copy character images (before manifest write so activeImages is populated)
 	await copyCharacterImages(config.characters);
 
 	const totalDurationInFrames = segments.reduce(

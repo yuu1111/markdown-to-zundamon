@@ -1,6 +1,26 @@
 {
 	"$schema": "https://unpkg.com/knip@5/schema.json",
-	"entry": ["src/main.ts", "scripts/*.ts", "remotion.config.ts"],
 	"ignoreBinaries": ["similarity-ts"],
-	"ignoreDependencies": ["@ai-sdk/google"]
+	"ignoreDependencies": ["@ai-sdk/google"],
+	"workspaces": {
+		"packages/core": {
+			"entry": [
+				"src/types.ts",
+				"src/paths.ts",
+				"src/config.ts",
+				"src/assets.ts"
+			]
+		},
+		"packages/cli": {
+			"entry": [
+				"src/preprocess.ts",
+				"src/fetch.ts",
+				"src/render.ts",
+				"src/studio.ts"
+			]
+		},
+		"packages/video": {
+			"entry": ["src/main.ts", "remotion.config.ts"]
+		}
+	}
 }

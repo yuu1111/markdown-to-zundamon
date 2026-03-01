@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { downloadRemoteImage } from "@markdown-to-zundamon/core/assets";
+import {
+	PROJECTS_DIR,
+	VIDEO_PUBLIC_DIR,
+} from "@markdown-to-zundamon/core/paths";
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { generateScript } from "./lib/llm";
-
-/**
- * @description fetch で生成した台本の保存先ディレクトリ
- */
-const PROJECTS_DIR = path.resolve(import.meta.dir, "../projects");
 
 /**
  * @description frontmatterのデフォルトテンプレート
@@ -147,7 +147,6 @@ async function downloadImages(
 	const matches = [...markdown.matchAll(imagePattern)];
 	if (matches.length === 0) return markdown;
 
-	fs.mkdirSync(imagesDir, { recursive: true });
 	let result = markdown;
 
 	for (const match of matches) {
@@ -156,32 +155,10 @@ async function downloadImages(
 		const url = match[2];
 		if (!url) continue;
 
-		const hash = new Bun.CryptoHasher("sha256")
-			.update(url)
-			.digest("hex")
-			.slice(0, 8);
-		const urlPath = new URL(url).pathname;
-		const ext = path.extname(urlPath) || ".jpg";
-		const destName = `${hash}${ext}`;
-		const destPath = path.join(imagesDir, destName);
+		const destName = await downloadRemoteImage(url, imagesDir);
+		if (!destName) continue;
 
-		if (!(await Bun.file(destPath).exists())) {
-			try {
-				const res = await fetch(url);
-				if (!res.ok) {
-					console.warn(`  [warn] Failed to download image: ${url}`);
-					continue;
-				}
-				await Bun.write(destPath, await res.arrayBuffer());
-				console.log(`  [image] ${url} → ${publicRelDir}/${destName}`);
-			} catch (err) {
-				console.warn(`  [warn] Error downloading image: ${url}`, err);
-				continue;
-			}
-		} else {
-			console.log(`  [cache] ${publicRelDir}/${destName}`);
-		}
-
+		console.log(`  [image] ${url} → ${publicRelDir}/${destName}`);
 		const localRef = `${publicRelDir}/${destName}`;
 		result = result.replace(fullMatch, `![${alt}](${localRef})`);
 	}
@@ -224,8 +201,7 @@ async function main(): Promise<void> {
 	const filename = deriveFilename(url, title);
 
 	console.log("Downloading images...");
-	const publicDir = path.resolve(import.meta.dir, "../public");
-	const imagesDir = path.join(publicDir, `projects/${filename}/images`);
+	const imagesDir = path.join(VIDEO_PUBLIC_DIR, `projects/${filename}/images`);
 	const publicRelDir = `projects/${filename}/images`;
 	const processedBody = await downloadImages(body, imagesDir, publicRelDir);
 

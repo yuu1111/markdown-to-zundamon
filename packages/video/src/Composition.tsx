@@ -1,3 +1,4 @@
+import { CompositionPropsSchema } from "@markdown-to-zundamon/core/types";
 import { getAvailableFonts } from "@remotion/google-fonts";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +13,6 @@ import {
 import { CharacterDisplay } from "./components/CharacterDisplay";
 import { SlideContent } from "./components/SlideContent";
 import { Subtitle } from "./components/Subtitle";
-import { CompositionPropsSchema } from "./types";
 
 /**
  * Load Google Fonts via useDelayRender and return resolved CSS font-family names.

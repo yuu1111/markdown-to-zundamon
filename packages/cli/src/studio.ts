@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { VIDEO_PACKAGE_DIR } from "@markdown-to-zundamon/core/paths";
 
 const rawArg = process.argv[2];
 if (!rawArg) {
@@ -14,7 +15,7 @@ console.log(`Starting studio for project: "${projectName}"`);
 const result = Bun.spawnSync(["bunx", "remotion", "studio", "--props", props], {
 	stdout: "inherit",
 	stderr: "inherit",
-	cwd: path.resolve(import.meta.dir, ".."),
+	cwd: VIDEO_PACKAGE_DIR,
 });
 
 process.exit(result.exitCode);

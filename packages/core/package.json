@@ -1,0 +1,17 @@
+{
+	"name": "@markdown-to-zundamon/core",
+	"version": "1.0.0",
+	"private": true,
+	"exports": {
+		"./types": "./src/types.ts",
+		"./paths": "./src/paths.ts",
+		"./config": "./src/config.ts",
+		"./assets": "./src/assets.ts"
+	},
+	"dependencies": {
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.9"
+	}
+}

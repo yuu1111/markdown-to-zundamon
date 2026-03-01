@@ -1,6 +1,8 @@
 node_modules/
 dist/
+*.tsbuildinfo
 out/
 projects/
-public/projects/
+packages/video/public/projects/
+packages/video/public/characters/
 .env
