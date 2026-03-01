@@ -4,30 +4,30 @@ Markdownからずんだもん解説動画を生成するプロジェクト。Rem
 
 ## 前提条件
 
-- Node.js
+- Bun
 - VOICEVOX が `localhost:50021` で起動していること（前処理時）
 
 ## ビルド・実行手順
 
 ```bash
 # 1. 前処理: Markdown解析 + VOICEVOX音声生成 → public/<project>/manifest.json
-npm run preprocess -- example/my-video.md
+bun run preprocess -- example/my-video.md
 
 # 2. プレビュー
-npm run studio -- my-video
+bun run studio -- my-video
 
 # 3. レンダリング → out/<project>.mp4
-npm run render -- my-video
+bun run render -- my-video
 ```
 
 複数の動画を扱う場合はそれぞれ前処理→レンダリングを実行:
 
 ```bash
-npm run preprocess -- projects/intro.md
-npm run render -- intro
+bun run preprocess -- projects/intro.md
+bun run render -- intro
 
-npm run preprocess -- projects/chapter1.md
-npm run render -- chapter1
+bun run preprocess -- projects/chapter1.md
+bun run render -- chapter1
 ```
 
 ## アーキテクチャ
