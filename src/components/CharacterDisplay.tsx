@@ -34,7 +34,7 @@ export const CharacterDisplay: React.FC<Props> = ({
 	let displayImageSrc = imageSrc;
 	if (isSpeaking && activeImageSrcs && activeImageSrcs.length > 0) {
 		const index = Math.floor(frame / 4) % activeImageSrcs.length;
-		displayImageSrc = activeImageSrcs[index];
+		displayImageSrc = activeImageSrcs[index] ?? imageSrc;
 	}
 
 	const positionStyle =

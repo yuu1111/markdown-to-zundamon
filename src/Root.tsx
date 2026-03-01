@@ -23,7 +23,7 @@ export const RemotionRoot: React.FC = () => {
 				if (!res.ok) {
 					throw new Error(
 						`Failed to load manifest for project "${props.projectName}" (${res.status}). ` +
-							`Run: npm run preprocess -- <your-markdown-file.md>`,
+							`Run: bun run preprocess -- <your-markdown-file.md>`,
 					);
 				}
 				const manifest = ManifestSchema.parse(await res.json());

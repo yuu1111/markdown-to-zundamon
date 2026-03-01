@@ -10,7 +10,6 @@ export const CharacterSchema = z.object({
 	overflowY: z.number().default(0.4),
 	overflowX: z.number().default(0.1),
 	height: z.number().default(800),
-	// image path は name から自動解決: characters/<name>/default.png
 	activeImages: z.array(z.string()).optional(),
 });
 
@@ -51,8 +50,5 @@ export const CompositionPropsSchema = z.object({
 
 // Types derived from schemas
 export type Character = z.infer<typeof CharacterSchema>;
-export type ManifestConfig = z.infer<typeof ManifestConfigSchema>;
 export type Segment = z.infer<typeof SegmentSchema>;
-export type SegmentType = Segment["type"];
 export type Manifest = z.infer<typeof ManifestSchema>;
-export type CompositionPropsType = z.infer<typeof CompositionPropsSchema>;

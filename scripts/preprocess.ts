@@ -2,7 +2,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import matter from "gray-matter";
-import { toString } from "mdast-util-to-string";
+import type { Blockquote, Nodes } from "mdast";
+import { toString as mdastToString } from "mdast-util-to-string";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
@@ -124,7 +125,7 @@ async function synthesize(
  * and rewrite URLs to be relative to public/.
  */
 async function processImages(
-	node: any,
+	node: Nodes,
 	mdDir: string,
 	imagesDir: string,
 	projectName: string,
@@ -183,16 +184,16 @@ async function processImages(
 		}
 	}
 
-	if (node.children) {
+	if ("children" in node) {
 		for (const child of node.children) {
-			await processImages(child, mdDir, imagesDir, projectName);
+			await processImages(child as Nodes, mdDir, imagesDir, projectName);
 		}
 	}
 }
 
 /** Convert a blockquote AST node back to markdown string */
 async function blockquoteToMarkdown(
-	node: any,
+	node: Blockquote,
 	mdDir: string,
 	imagesDir: string,
 	projectName: string,
@@ -226,7 +227,7 @@ function parsePauseDirective(
 	line: string,
 ): { type: "pause"; ms: number } | null {
 	const m = line.trim().match(PAUSE_RE);
-	if (!m) return null;
+	if (!m?.[1] || !m[2]) return null;
 	const value = parseInt(m[1], 10);
 	const ms = m[2] === "s" ? value * 1000 : value;
 	return { type: "pause", ms };
@@ -239,7 +240,7 @@ function parseSpeakerTag(
 	line: string,
 ): { character: string; text: string } | null {
 	const m = line.match(SPEAKER_TAG_RE);
-	if (!m) return null;
+	if (!m?.[1]) return null;
 	// Don't match pause directives
 	if (PAUSE_RE.test(line.trim())) return null;
 	return { character: m[1], text: line.slice(m[0].length) };
@@ -329,9 +330,10 @@ async function main() {
 
 	// Default position for characters[1] is "left" (if not explicitly set)
 	if (config.characters.length > 1) {
+		const second = config.characters[1];
 		const raw1 = (frontmatter.characters as Record<string, unknown>[])?.[1];
-		if (raw1 && !raw1.position) {
-			config.characters[1].position = "left";
+		if (second && raw1 && !raw1.position) {
+			second.position = "left";
 		}
 	}
 
@@ -351,7 +353,7 @@ async function main() {
 
 	for (const node of tree.children) {
 		if (node.type === "blockquote") {
-			const text = toString(node);
+			const text = mdastToString(node);
 			const markdown = await blockquoteToMarkdown(
 				node,
 				mdDir,
@@ -378,7 +380,7 @@ async function main() {
 			});
 			prevNodeHadSpeech = false;
 		} else {
-			const fullText = toString(node).trim();
+			const fullText = mdastToString(node).trim();
 			if (!fullText) continue;
 
 			// Insert paragraph gap if previous node produced speech
