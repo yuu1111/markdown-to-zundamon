@@ -43,7 +43,9 @@ function useGoogleFonts(fontNames: string[]): Map<string, string> {
 					return [name, name] as const;
 				}
 				const loaded = await font.load();
-				await loaded.loadFont().waitUntilDone();
+				await loaded
+				.loadFont("normal", { weights: ["400", "700"] })
+				.waitUntilDone();
 				console.log(
 					`Font loaded: "${name}" → CSS family "${loaded.fontFamily}"`,
 				);

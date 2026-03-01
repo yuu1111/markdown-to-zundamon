@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Readability } from "@mozilla/readability";
@@ -132,6 +133,66 @@ function parseArgs(argv: string[]): {
 }
 
 /**
+ * @description Markdown内のリモート画像URLをダウンロードしてローカルパスに書き換える
+ * @param markdown - 処理対象のMarkdown文字列
+ * @param imagesDir - 画像保存先ディレクトリの絶対パス
+ * @param publicRelDir - publicからの相対パス(例: "projects/foo/images")
+ * @returns 画像URLが書き換えられたMarkdown文字列
+ */
+async function downloadImages(
+	markdown: string,
+	imagesDir: string,
+	publicRelDir: string,
+): Promise<string> {
+	const imagePattern = /!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g;
+	const matches = [...markdown.matchAll(imagePattern)];
+	if (matches.length === 0) return markdown;
+
+	fs.mkdirSync(imagesDir, { recursive: true });
+	let result = markdown;
+
+	for (const match of matches) {
+		const fullMatch = match[0];
+		const alt = match[1];
+		const url = match[2];
+		if (!url) continue;
+
+		const hash = crypto
+			.createHash("sha256")
+			.update(url)
+			.digest("hex")
+			.slice(0, 8);
+		const urlPath = new URL(url).pathname;
+		const ext = path.extname(urlPath) || ".jpg";
+		const destName = `${hash}${ext}`;
+		const destPath = path.join(imagesDir, destName);
+
+		if (!fs.existsSync(destPath)) {
+			try {
+				const res = await fetch(url);
+				if (!res.ok) {
+					console.warn(`  [warn] Failed to download image: ${url}`);
+					continue;
+				}
+				const buf = Buffer.from(await res.arrayBuffer());
+				fs.writeFileSync(destPath, buf);
+				console.log(`  [image] ${url} → ${publicRelDir}/${destName}`);
+			} catch (err) {
+				console.warn(`  [warn] Error downloading image: ${url}`, err);
+				continue;
+			}
+		} else {
+			console.log(`  [cache] ${publicRelDir}/${destName}`);
+		}
+
+		const localRef = `${publicRelDir}/${destName}`;
+		result = result.replace(fullMatch, `![${alt}](${localRef})`);
+	}
+
+	return result;
+}
+
+/**
  * @description メイン処理
  */
 async function main(): Promise<void> {
@@ -163,9 +224,16 @@ async function main(): Promise<void> {
 	const body = await generateScript(rawMarkdown, title, model);
 	console.log(`  Output: ${body.split("\n").length} lines`);
 
-	const fullMarkdown = `${DEFAULT_FRONTMATTER}\n\n${body}\n`;
-
 	const filename = deriveFilename(url, title);
+
+	console.log("Downloading images...");
+	const publicDir = path.resolve(__dirname, "../public");
+	const imagesDir = path.join(publicDir, `projects/${filename}/images`);
+	const publicRelDir = `projects/${filename}/images`;
+	const processedBody = await downloadImages(body, imagesDir, publicRelDir);
+
+	const fullMarkdown = `${DEFAULT_FRONTMATTER}\n\n${processedBody}\n`;
+
 	fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 	const outputPath = path.join(PROJECTS_DIR, `${filename}.md`);
 	fs.writeFileSync(outputPath, fullMarkdown, "utf-8");

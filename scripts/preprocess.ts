@@ -160,11 +160,16 @@ async function processImages(
 
 			node.url = `projects/${projectName}/images/${destName}`;
 		} else {
-			// Local image
-			const srcPath = path.resolve(mdDir, url);
+			// Local image: resolve from MD directory, then fallback to public/
+			let srcPath = path.resolve(mdDir, url);
 			if (!fs.existsSync(srcPath)) {
-				console.warn(`  [warn] Image not found: ${srcPath}`);
-				return;
+				const publicPath = path.resolve(__dirname, "../public", url);
+				if (fs.existsSync(publicPath)) {
+					srcPath = publicPath;
+				} else {
+					console.warn(`  [warn] Image not found: ${srcPath}`);
+					return;
+				}
 			}
 
 			const hash = shortHash(srcPath);
