@@ -11,6 +11,7 @@ import type { Character, Manifest, Segment } from "../src/types";
 import { ManifestConfigSchema } from "../src/types";
 
 const VOICEVOX_BASE = process.env.VOICEVOX_BASE ?? "http://localhost:50021";
+const COEIROINK_BASE = process.env.COEIROINK_BASE ?? "http://localhost:50032";
 
 const BASE_PUBLIC_DIR = path.resolve(__dirname, "../public/projects");
 
@@ -42,26 +43,16 @@ function getWavDurationSec(filePath: string): number {
 	throw new Error(`Could not find data chunk in WAV: ${filePath}`);
 }
 
-async function synthesize(
+/**
+ * @description VOICEVOX API で WAV バイト列を取得する
+ * @param text - 合成するテキスト
+ * @param speakerId - VOICEVOX の話者ID
+ * @returns WAV バイナリ
+ */
+async function synthesizeVoicevox(
 	text: string,
 	speakerId: number,
-	audioDir: string,
-	projectName: string,
-): Promise<{ audioPath: string; durationSec: number }> {
-	const hash = shortHash(text);
-	const sanitized = sanitizeForFilename(text);
-	const filename = `${hash}-${sanitized}.wav`;
-	const audioPath = path.join(audioDir, filename);
-
-	if (fs.existsSync(audioPath)) {
-		console.log(`  [cache] ${filename}`);
-		const durationSec = getWavDurationSec(audioPath);
-		return {
-			audioPath: `projects/${projectName}/audio/${filename}`,
-			durationSec,
-		};
-	}
-
+): Promise<Buffer> {
 	let queryRes: Response;
 	try {
 		queryRes = await fetch(
@@ -109,7 +100,104 @@ async function synthesize(
 		);
 	}
 
-	const wavBuffer = Buffer.from(await synthRes.arrayBuffer());
+	return Buffer.from(await synthRes.arrayBuffer());
+}
+
+/**
+ * @description Coeiroink API で WAV バイト列を取得する
+ * @param text - 合成するテキスト
+ * @param speakerUuid - Coeiroink の話者UUID
+ * @param styleId - Coeiroink のスタイルID
+ * @returns WAV バイナリ
+ */
+async function synthesizeCoeiroink(
+	text: string,
+	speakerUuid: string,
+	styleId: number,
+): Promise<Buffer> {
+	let synthRes: Response;
+	try {
+		synthRes = await fetch(`${COEIROINK_BASE}/v1/synthesis`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				speakerUuid,
+				styleId,
+				text,
+				speedScale: 1.0,
+				volumeScale: 1.0,
+				pitchScale: 0,
+				intonationScale: 1.0,
+				prePhonemeLength: 0.1,
+				postPhonemeLength: 0.1,
+				outputSamplingRate: 44100,
+			}),
+		});
+	} catch (err) {
+		throw new Error(
+			`Coeiroink に接続できません (${COEIROINK_BASE})\n` +
+				`  Coeiroink が起動しているか確認してください。\n` +
+				`  別のホストで動いている場合は環境変数 COEIROINK_BASE を設定してください。\n` +
+				`  例: COEIROINK_BASE=http://192.168.1.100:50032 bun run preprocess -- ...\n` +
+				`  原因: ${err instanceof Error ? err.message : err}`,
+		);
+	}
+	if (!synthRes.ok) {
+		const body = await synthRes.text();
+		throw new Error(
+			`Coeiroink synthesis が失敗しました (speakerUuid=${speakerUuid}, styleId=${styleId})\n` +
+				`  ステータス: ${synthRes.status}\n` +
+				`  レスポンス: ${body}`,
+		);
+	}
+
+	return Buffer.from(await synthRes.arrayBuffer());
+}
+
+/**
+ * @description テキストを音声合成して WAV ファイルを生成する(キャッシュ対応)
+ * @param text - 合成するテキスト
+ * @param character - キャラクター設定
+ * @param engine - 使用する TTS エンジン
+ * @param audioDir - 音声ファイルの出力ディレクトリ
+ * @param projectName - プロジェクト名
+ * @returns 音声ファイルのパスと再生時間
+ */
+async function synthesize(
+	text: string,
+	character: Character,
+	engine: "voicevox" | "coeiroink",
+	audioDir: string,
+	projectName: string,
+): Promise<{ audioPath: string; durationSec: number }> {
+	// キャッシュキーにエンジンと話者識別子を含める
+	const speakerKey =
+		engine === "coeiroink"
+			? `${character.speakerUuid}:${character.styleId}`
+			: `${character.speakerId}`;
+	const hash = shortHash(`${engine}:${speakerKey}:${text}`);
+	const sanitized = sanitizeForFilename(text);
+	const filename = `${hash}-${sanitized}.wav`;
+	const audioPath = path.join(audioDir, filename);
+
+	if (fs.existsSync(audioPath)) {
+		console.log(`  [cache] ${filename}`);
+		const durationSec = getWavDurationSec(audioPath);
+		return {
+			audioPath: `projects/${projectName}/audio/${filename}`,
+			durationSec,
+		};
+	}
+
+	const wavBuffer =
+		engine === "coeiroink"
+			? await synthesizeCoeiroink(
+					text,
+					character.speakerUuid as string,
+					character.styleId as number,
+				)
+			: await synthesizeVoicevox(text, character.speakerId as number);
+
 	fs.writeFileSync(audioPath, wavBuffer);
 	console.log(`  [synth] ${filename}`);
 
@@ -247,10 +335,7 @@ function parseSpeakerTag(
 }
 
 /** Build a map from character name to Character config */
-function buildCharacterMap(
-	characters: Character[],
-	_defaultSpeakerId: number,
-): Map<string, Character> {
+function buildCharacterMap(characters: Character[]): Map<string, Character> {
 	const map = new Map<string, Character>();
 	for (const c of characters) {
 		map.set(c.name, c);
@@ -331,6 +416,25 @@ async function main() {
 	// Merge config from frontmatter (ManifestConfigSchema provides defaults)
 	const config = ManifestConfigSchema.parse(frontmatter);
 
+	// エンジン別のキャラクター設定バリデーション
+	for (const char of config.characters) {
+		if (config.engine === "coeiroink") {
+			if (!char.speakerUuid || char.styleId == null) {
+				throw new Error(
+					`Coeiroink エンジンではキャラクター "${char.name}" に speakerUuid と styleId が必要です。\n` +
+						`  frontmatter の characters で speakerUuid と styleId を指定してください。`,
+				);
+			}
+		} else {
+			if (char.speakerId == null) {
+				throw new Error(
+					`VOICEVOX エンジンではキャラクター "${char.name}" に speakerId が必要です。\n` +
+						`  frontmatter の characters で speakerId を指定してください。`,
+				);
+			}
+		}
+	}
+
 	// Default position for characters[1] is "left" (if not explicitly set)
 	if (config.characters.length > 1) {
 		const second = config.characters[1];
@@ -347,7 +451,7 @@ async function main() {
 	const segments: Segment[] = [];
 
 	// Build character map for speaker tag resolution
-	const characterMap = buildCharacterMap(config.characters, config.speakerId);
+	const characterMap = buildCharacterMap(config.characters);
 	// When only one character, use it as default (no tag needed)
 	const defaultCharacter =
 		config.characters.length === 1 ? config.characters[0] : undefined;
@@ -408,9 +512,7 @@ async function main() {
 			let speechCount = 0;
 
 			// Track current speaker within a paragraph
-			let currentCharacterName: string | undefined = defaultCharacter?.name;
-			let currentSpeakerId: number =
-				defaultCharacter?.speakerId ?? config.speakerId;
+			let currentCharacter: Character | undefined = defaultCharacter;
 
 			for (const line of lines) {
 				const trimmed = line.trim();
@@ -429,35 +531,28 @@ async function main() {
 				} else {
 					// Parse speaker tag
 					let speechText = trimmed;
-					let speakerId = currentSpeakerId;
-					let characterName = currentCharacterName;
 
 					const speakerTag = parseSpeakerTag(trimmed);
 					if (speakerTag) {
 						const char = characterMap.get(speakerTag.character);
 						if (char) {
 							speechText = speakerTag.text;
-							speakerId = char.speakerId;
-							characterName = char.name;
+							currentCharacter = char;
 						} else {
 							console.warn(
 								`  [warn] Unknown character "${speakerTag.character}", using default`,
 							);
 							speechText = speakerTag.text;
-							characterName = defaultCharacter?.name;
-							speakerId = defaultCharacter?.speakerId ?? config.speakerId;
+							currentCharacter = defaultCharacter;
 						}
-						// Update current speaker for subsequent lines
-						currentCharacterName = characterName;
-						currentSpeakerId = speakerId;
 					}
 					// Lines without a speaker tag inherit the current speaker
 
 					// Skip lines with no speech text (speaker tag only)
 					if (!speechText.trim()) continue;
 
-					// Process <ruby> tags: display text for subtitles, speech text for VOICEVOX
-					const { displayText, speechText: voicevoxText } =
+					// Process <ruby> tags: display text for subtitles, speech text for TTS
+					const { displayText, speechText: ttsText } =
 						processRubyTags(speechText);
 
 					// Insert gap between consecutive speech lines
@@ -469,10 +564,15 @@ async function main() {
 						});
 					}
 
+					// characters は .min(1) で最低1つ保証されている
+					const fallback = config.characters[0] as Character;
+					const synthCharacter = currentCharacter ?? fallback;
+
 					console.log(`[speech] ${displayText.slice(0, 40)}...`);
 					const { audioPath, durationSec } = await synthesize(
-						voicevoxText,
-						speakerId,
+						ttsText,
+						synthCharacter,
+						config.engine,
 						audioDir,
 						projectName,
 					);
@@ -482,7 +582,7 @@ async function main() {
 						text: displayText,
 						audioFile: audioPath,
 						durationInFrames,
-						...(characterName ? { character: characterName } : {}),
+						...(currentCharacter ? { character: currentCharacter.name } : {}),
 					});
 					speechCount++;
 				}

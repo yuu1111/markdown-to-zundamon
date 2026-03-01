@@ -3,7 +3,9 @@ import { z } from "zod";
 // Zod schemas
 export const CharacterSchema = z.object({
 	name: z.string(),
-	speakerId: z.number(),
+	speakerId: z.number().optional(),
+	speakerUuid: z.string().optional(),
+	styleId: z.number().optional(),
 	position: z.enum(["left", "right"]).default("right"),
 	flip: z.boolean().default(false),
 	color: z.string().default("#555555"),
@@ -15,6 +17,7 @@ export const CharacterSchema = z.object({
 });
 
 export const ManifestConfigSchema = z.object({
+	engine: z.enum(["voicevox", "coeiroink"]).default("voicevox"),
 	fps: z.number().default(30),
 	width: z.number().default(1920),
 	height: z.number().default(1080),
