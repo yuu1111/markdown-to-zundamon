@@ -6,12 +6,16 @@ Markdownからずんだもん解説動画を生成するプロジェクト。Rem
 
 - Bun
 - VOICEVOX が `localhost:50021` で起動していること（前処理時）
+- LLM API キー（fetch 時）: `.env` に `GOOGLE_GENERATIVE_AI_API_KEY` 等を設定
 
 ## ビルド・実行手順
 
 ```bash
+# 0. 記事URLから台本を生成 → projects/<name>.md
+bun run fetch -- https://example.com/article
+
 # 1. 前処理: Markdown解析 + VOICEVOX音声生成 → public/<project>/manifest.json
-bun run preprocess -- example/my-video.md
+bun run preprocess -- projects/my-video.md
 
 # 2. プレビュー
 bun run studio -- my-video
@@ -20,14 +24,10 @@ bun run studio -- my-video
 bun run render -- my-video
 ```
 
-複数の動画を扱う場合はそれぞれ前処理→レンダリングを実行:
+fetch でモデルを指定する場合:
 
 ```bash
-bun run preprocess -- projects/intro.md
-bun run render -- intro
-
-bun run preprocess -- projects/chapter1.md
-bun run render -- chapter1
+bun run fetch -- https://example.com/article -m anthropic:claude-sonnet-4-20250514
 ```
 
 ## アーキテクチャ
@@ -41,9 +41,13 @@ bun run render -- chapter1
 
 ## ファイル構成
 
+- `scripts/fetch.ts` - 記事URL→LLM台本生成スクリプト
+- `scripts/lib/llm.ts` - LLMプロバイダー解決・テキスト生成
+- `scripts/lib/prompt.ts` - 台本生成用プロンプト構築
 - `scripts/preprocess.ts` - 前処理スクリプト
 - `scripts/studio.ts` - Remotion Studio 起動ヘルパースクリプト
 - `scripts/render.ts` - レンダリングヘルパースクリプト
+- `projects/` - fetch で生成した台本MD（生成物、gitignore）
 - `src/index.ts` - Remotion registerRoot
 - `src/Root.tsx` - Composition登録（calculateMetadata で動的マニフェスト読み込み）
 - `src/Composition.tsx` - メイン合成コンポーネント

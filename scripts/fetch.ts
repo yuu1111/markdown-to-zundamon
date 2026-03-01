@@ -1,8 +1,14 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { generateScript } from "./lib/llm";
+
+/**
+ * @description fetch で生成した台本の保存先ディレクトリ
+ */
+const PROJECTS_DIR = path.resolve(__dirname, "../projects");
 
 /**
  * @description frontmatterのデフォルトテンプレート
@@ -101,20 +107,15 @@ function createTurndown(): TurndownService {
  */
 function parseArgs(argv: string[]): {
 	url: string;
-	outputPath: string | null;
 	model: string;
 } {
 	const args = argv.slice(2);
 	let url: string | undefined;
-	let outputPath: string | null = null;
 	let model: string = process.env.LLM_MODEL ?? DEFAULT_MODEL;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? "";
-		if ((arg === "-o" || arg === "--output") && i + 1 < args.length) {
-			outputPath = args[i + 1] ?? null;
-			i++;
-		} else if ((arg === "-m" || arg === "--model") && i + 1 < args.length) {
+		if ((arg === "-m" || arg === "--model") && i + 1 < args.length) {
 			model = args[i + 1] ?? model;
 			i++;
 		} else if (!url) {
@@ -123,20 +124,18 @@ function parseArgs(argv: string[]): {
 	}
 
 	if (!url) {
-		console.error(
-			"Usage: bun run fetch -- <url> [-o output.md] [-m provider:model]",
-		);
+		console.error("Usage: bun run fetch -- <url> [-m provider:model]");
 		process.exit(1);
 	}
 
-	return { url, outputPath, model };
+	return { url, model };
 }
 
 /**
  * @description メイン処理
  */
 async function main(): Promise<void> {
-	const { url: urlArg, outputPath: outputArg, model } = parseArgs(process.argv);
+	const { url: urlArg, model } = parseArgs(process.argv);
 
 	const url = parseUrl(urlArg);
 	console.log(`Fetching: ${url.href}`);
@@ -167,12 +166,13 @@ async function main(): Promise<void> {
 	const fullMarkdown = `${DEFAULT_FRONTMATTER}\n\n${body}\n`;
 
 	const filename = deriveFilename(url, title);
-	const outputPath = outputArg ?? `${filename}.md`;
+	fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+	const outputPath = path.join(PROJECTS_DIR, `${filename}.md`);
 	fs.writeFileSync(outputPath, fullMarkdown, "utf-8");
 
 	console.log(`\nOutput: ${outputPath}`);
 	console.log(`\nNext steps:`);
-	console.log(`  Preprocess: bun run preprocess -- ${outputPath}`);
+	console.log(`  Preprocess: bun run preprocess -- projects/${filename}.md`);
 	console.log(`  Studio:     bun run studio -- ${filename}`);
 }
 
