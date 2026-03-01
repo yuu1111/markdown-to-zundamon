@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import matter from "@11ty/gray-matter";
 import {
 	copyLocalImage,
 	downloadRemoteImage,
@@ -16,7 +17,6 @@ import type {
 	Segment,
 } from "@markdown-to-zundamon/core/types";
 import { ManifestConfigSchema } from "@markdown-to-zundamon/core/types";
-import matter from "gray-matter";
 import type { Blockquote, Nodes } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import remarkParse from "remark-parse";
