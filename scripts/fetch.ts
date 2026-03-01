@@ -1,4 +1,3 @@
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Readability } from "@mozilla/readability";
@@ -9,7 +8,7 @@ import { generateScript } from "./lib/llm";
 /**
  * @description fetch で生成した台本の保存先ディレクトリ
  */
-const PROJECTS_DIR = path.resolve(__dirname, "../projects");
+const PROJECTS_DIR = path.resolve(import.meta.dir, "../projects");
 
 /**
  * @description frontmatterのデフォルトテンプレート
@@ -157,8 +156,7 @@ async function downloadImages(
 		const url = match[2];
 		if (!url) continue;
 
-		const hash = crypto
-			.createHash("sha256")
+		const hash = new Bun.CryptoHasher("sha256")
 			.update(url)
 			.digest("hex")
 			.slice(0, 8);
@@ -167,15 +165,14 @@ async function downloadImages(
 		const destName = `${hash}${ext}`;
 		const destPath = path.join(imagesDir, destName);
 
-		if (!fs.existsSync(destPath)) {
+		if (!(await Bun.file(destPath).exists())) {
 			try {
 				const res = await fetch(url);
 				if (!res.ok) {
 					console.warn(`  [warn] Failed to download image: ${url}`);
 					continue;
 				}
-				const buf = Buffer.from(await res.arrayBuffer());
-				fs.writeFileSync(destPath, buf);
+				await Bun.write(destPath, await res.arrayBuffer());
 				console.log(`  [image] ${url} → ${publicRelDir}/${destName}`);
 			} catch (err) {
 				console.warn(`  [warn] Error downloading image: ${url}`, err);
@@ -227,7 +224,7 @@ async function main(): Promise<void> {
 	const filename = deriveFilename(url, title);
 
 	console.log("Downloading images...");
-	const publicDir = path.resolve(__dirname, "../public");
+	const publicDir = path.resolve(import.meta.dir, "../public");
 	const imagesDir = path.join(publicDir, `projects/${filename}/images`);
 	const publicRelDir = `projects/${filename}/images`;
 	const processedBody = await downloadImages(body, imagesDir, publicRelDir);
@@ -236,7 +233,7 @@ async function main(): Promise<void> {
 
 	fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 	const outputPath = path.join(PROJECTS_DIR, `${filename}.md`);
-	fs.writeFileSync(outputPath, fullMarkdown, "utf-8");
+	await Bun.write(outputPath, fullMarkdown);
 
 	console.log(`\nOutput: ${outputPath}`);
 	console.log(`\nNext steps:`);

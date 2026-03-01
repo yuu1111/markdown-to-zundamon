@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 
 const rawArg = process.argv[2];
@@ -12,9 +11,10 @@ const props = JSON.stringify({ projectName });
 
 console.log(`Starting studio for project: "${projectName}"`);
 
-const result = spawnSync("bunx", ["remotion", "studio", "--props", props], {
-	stdio: "inherit",
-	cwd: path.resolve(__dirname, ".."),
+const result = Bun.spawnSync(["bunx", "remotion", "studio", "--props", props], {
+	stdout: "inherit",
+	stderr: "inherit",
+	cwd: path.resolve(import.meta.dir, ".."),
 });
 
-process.exit(result.status ?? 1);
+process.exit(result.exitCode);

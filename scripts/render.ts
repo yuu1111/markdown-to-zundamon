@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -11,16 +10,16 @@ if (!rawArg) {
 const projectName = path.basename(rawArg, path.extname(rawArg));
 
 const manifestPath = path.resolve(
-	__dirname,
+	import.meta.dir,
 	`../public/projects/${projectName}/manifest.json`,
 );
-if (!fs.existsSync(manifestPath)) {
+if (!(await Bun.file(manifestPath).exists())) {
 	console.error(`Error: manifest not found at ${manifestPath}`);
 	console.error(`Run first: bun run preprocess -- <your-markdown-file.md>`);
 	process.exit(1);
 }
 
-const outDir = path.resolve(__dirname, "../out");
+const outDir = path.resolve(import.meta.dir, "../out");
 fs.mkdirSync(outDir, { recursive: true });
 
 const outFile = `out/${projectName}.mp4`;
@@ -28,13 +27,13 @@ const props = JSON.stringify({ projectName });
 
 console.log(`Rendering "${projectName}" → ${outFile}`);
 
-const result = spawnSync(
-	"bunx",
-	["remotion", "render", "ZundamonVideo", "--props", props, outFile],
+const result = Bun.spawnSync(
+	["bunx", "remotion", "render", "ZundamonVideo", "--props", props, outFile],
 	{
-		stdio: "inherit",
-		cwd: path.resolve(__dirname, ".."),
+		stdout: "inherit",
+		stderr: "inherit",
+		cwd: path.resolve(import.meta.dir, ".."),
 	},
 );
 
-process.exit(result.status ?? 1);
+process.exit(result.exitCode);

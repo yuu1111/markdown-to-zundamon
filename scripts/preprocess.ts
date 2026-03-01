@@ -1,4 +1,3 @@
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import matter from "gray-matter";
@@ -13,7 +12,7 @@ import { ManifestConfigSchema } from "../src/types";
 const VOICEVOX_BASE = process.env.VOICEVOX_BASE ?? "http://localhost:50021";
 const COEIROINK_BASE = process.env.COEIROINK_BASE ?? "http://localhost:50032";
 
-const BASE_PUBLIC_DIR = path.resolve(__dirname, "../public/projects");
+const BASE_PUBLIC_DIR = path.resolve(import.meta.dir, "../public/projects");
 
 function sanitizeForFilename(text: string): string {
 	return text
@@ -24,7 +23,7 @@ function sanitizeForFilename(text: string): string {
 }
 
 function shortHash(text: string): string {
-	return crypto.createHash("sha256").update(text).digest("hex").slice(0, 8);
+	return new Bun.CryptoHasher("sha256").update(text).digest("hex").slice(0, 8);
 }
 
 /** Parse WAV header to get duration in seconds */
@@ -52,7 +51,7 @@ function getWavDurationSec(filePath: string): number {
 async function synthesizeVoicevox(
 	text: string,
 	speakerId: number,
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
 	let queryRes: Response;
 	try {
 		queryRes = await fetch(
@@ -100,7 +99,7 @@ async function synthesizeVoicevox(
 		);
 	}
 
-	return Buffer.from(await synthRes.arrayBuffer());
+	return await synthRes.arrayBuffer();
 }
 
 /**
@@ -114,7 +113,7 @@ async function synthesizeCoeiroink(
 	text: string,
 	speakerUuid: string,
 	styleId: number,
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
 	let synthRes: Response;
 	try {
 		synthRes = await fetch(`${COEIROINK_BASE}/v1/synthesis`, {
@@ -151,7 +150,7 @@ async function synthesizeCoeiroink(
 		);
 	}
 
-	return Buffer.from(await synthRes.arrayBuffer());
+	return await synthRes.arrayBuffer();
 }
 
 /**
@@ -180,7 +179,7 @@ async function synthesize(
 	const filename = `${hash}-${sanitized}.wav`;
 	const audioPath = path.join(audioDir, filename);
 
-	if (fs.existsSync(audioPath)) {
+	if (await Bun.file(audioPath).exists()) {
 		console.log(`  [cache] ${filename}`);
 		const durationSec = getWavDurationSec(audioPath);
 		return {
@@ -198,7 +197,7 @@ async function synthesize(
 				)
 			: await synthesizeVoicevox(text, character.speakerId as number);
 
-	fs.writeFileSync(audioPath, wavBuffer);
+	await Bun.write(audioPath, wavBuffer);
 	console.log(`  [synth] ${filename}`);
 
 	const durationSec = getWavDurationSec(audioPath);
@@ -231,14 +230,13 @@ async function processImages(
 			fs.mkdirSync(imagesDir, { recursive: true });
 			const destPath = path.join(imagesDir, destName);
 
-			if (!fs.existsSync(destPath)) {
+			if (!(await Bun.file(destPath).exists())) {
 				const res = await fetch(url);
 				if (!res.ok) {
 					console.warn(`  [warn] Failed to download image: ${url}`);
 					return;
 				}
-				const buf = Buffer.from(await res.arrayBuffer());
-				fs.writeFileSync(destPath, buf);
+				await Bun.write(destPath, await res.arrayBuffer());
 				console.log(
 					`  [image] ${url} → projects/${projectName}/images/${destName}`,
 				);
@@ -250,9 +248,9 @@ async function processImages(
 		} else {
 			// Local image: resolve from MD directory, then fallback to public/
 			let srcPath = path.resolve(mdDir, url);
-			if (!fs.existsSync(srcPath)) {
-				const publicPath = path.resolve(__dirname, "../public", url);
-				if (fs.existsSync(publicPath)) {
+			if (!(await Bun.file(srcPath).exists())) {
+				const publicPath = path.resolve(import.meta.dir, "../public", url);
+				if (await Bun.file(publicPath).exists()) {
 					srcPath = publicPath;
 				} else {
 					console.warn(`  [warn] Image not found: ${srcPath}`);
@@ -267,7 +265,7 @@ async function processImages(
 
 			fs.mkdirSync(imagesDir, { recursive: true });
 			const destPath = path.join(imagesDir, destName);
-			fs.copyFileSync(srcPath, destPath);
+			await Bun.write(destPath, Bun.file(srcPath));
 			console.log(
 				`  [image] ${path.basename(srcPath)} → ${projectName}/images/${destName}`,
 			);
@@ -349,19 +347,19 @@ function buildCharacterMap(characters: Character[]): Map<string, Character> {
 }
 
 /** Copy character images to public directory */
-function copyCharacterImages(characters: Character[]): void {
+async function copyCharacterImages(characters: Character[]): Promise<void> {
 	for (const char of characters) {
 		const charSrc = path.resolve(
-			__dirname,
+			import.meta.dir,
 			`../characters/${char.name}/default.png`,
 		);
 		const charDst = path.resolve(
-			__dirname,
+			import.meta.dir,
 			`../public/characters/${char.name}/default.png`,
 		);
-		if (fs.existsSync(charSrc)) {
+		if (await Bun.file(charSrc).exists()) {
 			fs.mkdirSync(path.dirname(charDst), { recursive: true });
-			fs.copyFileSync(charSrc, charDst);
+			await Bun.write(charDst, Bun.file(charSrc));
 			console.log(
 				`  [char] ${char.name} → characters/${char.name}/default.png`,
 			);
@@ -371,8 +369,8 @@ function copyCharacterImages(characters: Character[]): void {
 		}
 
 		// Copy active images for lip-sync animation (default_active1.png, default_active2.png, ...)
-		const charDir = path.resolve(__dirname, `../characters/${char.name}`);
-		const activeFiles = fs.existsSync(charDir)
+		const charDir = path.resolve(import.meta.dir, `../characters/${char.name}`);
+		const activeFiles = (await Bun.file(charDir).exists())
 			? fs
 					.readdirSync(charDir)
 					.filter((f) => /^default_active\d+\.png$/.test(f))
@@ -383,10 +381,10 @@ function copyCharacterImages(characters: Character[]): void {
 			for (const file of activeFiles) {
 				const activeSrc = path.join(charDir, file);
 				const activeDst = path.resolve(
-					__dirname,
+					import.meta.dir,
 					`../public/characters/${char.name}/${file}`,
 				);
-				fs.copyFileSync(activeSrc, activeDst);
+				await Bun.write(activeDst, Bun.file(activeSrc));
 				char.activeImages.push(file);
 				console.log(`  [char] ${char.name} → characters/${char.name}/${file}`);
 			}
@@ -415,7 +413,7 @@ async function main() {
 
 	console.log(`Project: "${projectName}" → public/projects/${projectName}/`);
 
-	const raw = fs.readFileSync(resolvedMdPath, "utf-8");
+	const raw = await Bun.file(resolvedMdPath).text();
 	const { data: frontmatter, content: mdContent } = matter(raw);
 
 	// Merge config from frontmatter (ManifestConfigSchema provides defaults)
@@ -597,7 +595,7 @@ async function main() {
 	}
 
 	// Copy character images (before manifest write so activeImages is populated)
-	copyCharacterImages(config.characters);
+	await copyCharacterImages(config.characters);
 
 	const totalDurationInFrames = segments.reduce(
 		(sum, s) => sum + s.durationInFrames,
@@ -611,7 +609,7 @@ async function main() {
 	};
 
 	const manifestPath = path.join(projectDir, "manifest.json");
-	fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+	await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
 	console.log(`\nManifest written to ${manifestPath}`);
 	console.log(
 		`Total duration: ${totalDurationInFrames} frames (${(totalDurationInFrames / config.fps).toFixed(1)}s)`,
