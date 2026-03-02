@@ -22,7 +22,7 @@ import { toString as mdastToString } from "mdast-util-to-string";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
-import { createTtsEngine } from "./tts/engine";
+import { createTtsEngine, type TtsEngine } from "./tts/engine";
 
 /**
  * @description preprocess の出力先ディレクトリ(video パッケージの public/projects)
@@ -30,12 +30,25 @@ import { createTtsEngine } from "./tts/engine";
 const BASE_PUBLIC_DIR = path.join(VIDEO_PUBLIC_DIR, "projects");
 
 /**
- * @description WAV ヘッダを解析して再生時間(秒)を返す
+ * @description ミリ秒をフレーム数に変換する
+ * @param ms - ミリ秒
+ * @param fps - フレームレート
+ * @returns フレーム数(切り上げ)
+ */
+function msToFrames(ms: number, fps: number): number {
+	return Math.ceil((ms / 1000) * fps);
+}
+
+/**
+ * @description WAV ヘッダのみを読み取って再生時間(秒)を返す
  * @param filePath - WAV ファイルのパス
  * @returns 再生時間(秒)
  */
 function getWavDurationSec(filePath: string): number {
-	const buf = fs.readFileSync(filePath);
+	const fd = fs.openSync(filePath, "r");
+	const buf = Buffer.alloc(512);
+	fs.readSync(fd, buf, 0, 512, 0);
+	fs.closeSync(fd);
 	const byteRate = buf.readUInt32LE(28);
 	let dataOffset = 12;
 	while (dataOffset < buf.length - 8) {
@@ -53,7 +66,8 @@ function getWavDurationSec(filePath: string): number {
  * @description テキストを音声合成して WAV ファイルを生成する(キャッシュ対応)
  * @param text - 合成するテキスト
  * @param character - キャラクター設定
- * @param engine - 使用する TTS エンジン種別
+ * @param ttsEngine - TTS エンジンインスタンス
+ * @param engineName - エンジン種別(キャッシュキー用)
  * @param audioDir - 音声ファイルの出力ディレクトリ
  * @param projectName - プロジェクト名
  * @returns 音声ファイルのパスと再生時間
@@ -61,16 +75,16 @@ function getWavDurationSec(filePath: string): number {
 async function synthesize(
 	text: string,
 	character: Character,
-	engine: "voicevox" | "coeiroink",
+	ttsEngine: TtsEngine,
+	engineName: "voicevox" | "coeiroink",
 	audioDir: string,
 	projectName: string,
 ): Promise<{ audioPath: string; durationSec: number }> {
-	// キャッシュキーにエンジンと話者識別子を含める
 	const speakerKey =
-		engine === "coeiroink"
+		engineName === "coeiroink"
 			? `${character.speakerUuid}:${character.styleId}`
 			: `${character.speakerId}`;
-	const hash = shortHash(`${engine}:${speakerKey}:${text}`);
+	const hash = shortHash(`${engineName}:${speakerKey}:${text}`);
 	const sanitized = sanitizeForFilename(text);
 	const filename = `${hash}-${sanitized}.wav`;
 	const audioPath = path.join(audioDir, filename);
@@ -84,7 +98,6 @@ async function synthesize(
 		};
 	}
 
-	const ttsEngine = createTtsEngine(engine);
 	const wavBuffer = await ttsEngine.synthesize(text, character);
 
 	await Bun.write(audioPath, wavBuffer);
@@ -144,9 +157,11 @@ async function processImages(
 	}
 
 	if ("children" in node) {
-		for (const child of node.children) {
-			await processImages(child as Nodes, mdDir, imagesDir, projectName);
-		}
+		await Promise.all(
+			node.children.map((child) =>
+				processImages(child as Nodes, mdDir, imagesDir, projectName),
+			),
+		);
 	}
 }
 
@@ -242,49 +257,55 @@ function buildCharacterMap(characters: Character[]): Map<string, Character> {
  * @param characters - キャラクター配列
  */
 async function copyCharacterImages(characters: Character[]): Promise<void> {
-	for (const char of characters) {
-		const charSrc = path.join(CHARACTERS_DIR, char.name, "default.png");
-		const charDst = path.join(
-			VIDEO_PUBLIC_DIR,
-			"characters",
-			char.name,
-			"default.png",
-		);
-		if (await Bun.file(charSrc).exists()) {
-			fs.mkdirSync(path.dirname(charDst), { recursive: true });
-			await Bun.write(charDst, Bun.file(charSrc));
-			console.log(
-				`  [char] ${char.name} → characters/${char.name}/default.png`,
+	await Promise.all(
+		characters.map(async (char) => {
+			const charSrc = path.join(CHARACTERS_DIR, char.name, "default.png");
+			const charDst = path.join(
+				VIDEO_PUBLIC_DIR,
+				"characters",
+				char.name,
+				"default.png",
 			);
-		} else {
-			console.warn(`  [warn] Character image not found: ${charSrc}`);
-			char.hasImage = false;
-		}
+			if (await Bun.file(charSrc).exists()) {
+				fs.mkdirSync(path.dirname(charDst), { recursive: true });
+				await Bun.write(charDst, Bun.file(charSrc));
+				console.log(
+					`  [char] ${char.name} → characters/${char.name}/default.png`,
+				);
+			} else {
+				console.warn(`  [warn] Character image not found: ${charSrc}`);
+				char.hasImage = false;
+			}
 
-		// Copy active images for lip-sync animation
-		const charDir = path.join(CHARACTERS_DIR, char.name);
-		const activeFiles = (await Bun.file(charDir).exists())
-			? fs
+			const charDir = path.join(CHARACTERS_DIR, char.name);
+			let activeFiles: string[] = [];
+			try {
+				activeFiles = fs
 					.readdirSync(charDir)
 					.filter((f) => /^default_active\d+\.png$/.test(f))
-					.sort()
-			: [];
-		if (activeFiles.length > 0) {
-			char.activeImages = [];
-			for (const file of activeFiles) {
-				const activeSrc = path.join(charDir, file);
-				const activeDst = path.join(
-					VIDEO_PUBLIC_DIR,
-					"characters",
-					char.name,
-					file,
-				);
-				await Bun.write(activeDst, Bun.file(activeSrc));
-				char.activeImages.push(file);
-				console.log(`  [char] ${char.name} → characters/${char.name}/${file}`);
+					.sort();
+			} catch {
+				// charDir が存在しない場合は空配列のまま
 			}
-		}
-	}
+			if (activeFiles.length > 0) {
+				char.activeImages = [];
+				for (const file of activeFiles) {
+					const activeSrc = path.join(charDir, file);
+					const activeDst = path.join(
+						VIDEO_PUBLIC_DIR,
+						"characters",
+						char.name,
+						file,
+					);
+					await Bun.write(activeDst, Bun.file(activeSrc));
+					char.activeImages.push(file);
+					console.log(
+						`  [char] ${char.name} → characters/${char.name}/${file}`,
+					);
+				}
+			}
+		}),
+	);
 }
 
 async function main() {
@@ -349,8 +370,9 @@ async function main() {
 				projectName,
 			);
 			console.log(`[slide] ${text.slice(0, 40)}...`);
-			const slideTransitionFrames = Math.ceil(
-				(config.slideTransitionMs / 1000) * config.fps,
+			const slideTransitionFrames = msToFrames(
+				config.slideTransitionMs,
+				config.fps,
 			);
 			if (segments.length > 0 && slideTransitionFrames > 0) {
 				segments.push({
@@ -371,8 +393,9 @@ async function main() {
 			if (!fullText) continue;
 
 			if (prevNodeHadSpeech) {
-				const paragraphGapFrames = Math.ceil(
-					(config.paragraphGapMs / 1000) * config.fps,
+				const paragraphGapFrames = msToFrames(
+					config.paragraphGapMs,
+					config.fps,
 				);
 				if (paragraphGapFrames > 0) {
 					segments.push({
@@ -384,9 +407,7 @@ async function main() {
 			}
 
 			const lines = fullText.split("\n");
-			const speechGapFrames = Math.ceil(
-				(config.speechGapMs / 1000) * config.fps,
-			);
+			const speechGapFrames = msToFrames(config.speechGapMs, config.fps);
 			let speechCount = 0;
 
 			let currentCharacter: Character | undefined = defaultCharacter;
@@ -397,7 +418,7 @@ async function main() {
 
 				const pause = parsePauseDirective(trimmed);
 				if (pause) {
-					const durationInFrames = Math.ceil((pause.ms / 1000) * config.fps);
+					const durationInFrames = msToFrames(pause.ms, config.fps);
 					console.log(`[pause] ${pause.ms}ms (${durationInFrames} frames)`);
 					segments.push({
 						type: "pause",
@@ -444,6 +465,7 @@ async function main() {
 					const { audioPath, durationSec } = await synthesize(
 						ttsText,
 						synthCharacter,
+						ttsEngine,
 						config.engine,
 						audioDir,
 						projectName,

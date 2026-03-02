@@ -1,7 +1,7 @@
 import { CompositionPropsSchema } from "@markdown-to-zundamon/core/types";
 import { getAvailableFonts } from "@remotion/google-fonts";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	AbsoluteFill,
 	Html5Audio,
@@ -15,8 +15,14 @@ import { SlideContent } from "./components/SlideContent";
 import { Subtitle } from "./components/Subtitle";
 
 /**
- * Load Google Fonts via useDelayRender and return resolved CSS font-family names.
- * The actual CSS font name may differ from the config name (e.g. the registry key).
+ * @description 利用可能なフォントレジストリ(モジュールレベルで1回だけ取得)
+ */
+const AVAILABLE_FONTS = getAvailableFonts();
+
+/**
+ * @description Google Fonts を useDelayRender で非同期ロードし、解決済み CSS font-family 名を返す
+ * @param fontNames - ロードするフォント名の配列
+ * @returns フォント名 → CSS font-family のマップ
  */
 function useGoogleFonts(fontNames: string[]): Map<string, string> {
 	const { delayRender, continueRender, cancelRender } = useDelayRender();
@@ -25,7 +31,6 @@ function useGoogleFonts(fontNames: string[]): Map<string, string> {
 	);
 	const handleRef = useRef<ReturnType<typeof delayRender> | null>(null);
 
-	// Deduplicate and sort for stable dependency
 	const key = [...new Set(fontNames)].sort().join(",");
 
 	useEffect(() => {
@@ -37,7 +42,7 @@ function useGoogleFonts(fontNames: string[]): Map<string, string> {
 
 		Promise.all(
 			uniqueNames.map(async (name) => {
-				const font = getAvailableFonts().find((f) => f.fontFamily === name);
+				const font = AVAILABLE_FONTS.find((f) => f.fontFamily === name);
 				if (!font) {
 					console.warn(`Font "${name}" not found in @remotion/google-fonts`);
 					return [name, name] as const;
@@ -92,14 +97,16 @@ export const ZundamonComposition: React.FC<Record<string, unknown>> = (
 		config.slideFontFamily ?? config.fontFamily,
 	);
 
-	// Build timeline: compute start frame for each segment
-	const timeline: { segment: (typeof segments)[number]; startFrame: number }[] =
-		[];
-	let currentFrame = 0;
-	for (const segment of segments) {
-		timeline.push({ segment, startFrame: currentFrame });
-		currentFrame += segment.durationInFrames;
-	}
+	const timeline = useMemo(() => {
+		const result: { segment: (typeof segments)[number]; startFrame: number }[] =
+			[];
+		let f = 0;
+		for (const segment of segments) {
+			result.push({ segment, startFrame: f });
+			f += segment.durationInFrames;
+		}
+		return result;
+	}, [segments]);
 
 	// Find current slide: last slide segment whose startFrame <= current frame
 	let currentSlideMarkdown: string | null = null;

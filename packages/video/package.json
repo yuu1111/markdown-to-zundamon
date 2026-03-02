@@ -8,12 +8,11 @@
 		"@remotion/google-fonts": "4.0.431",
 		"budoux": "^0.7.0",
 		"react-markdown": "^10.1.0",
-		"react-syntax-highlighter": "^16.1.1",
 		"remark-gfm": "^4.0.1",
-		"remotion": "4.0.431"
+		"remotion": "4.0.431",
+		"shiki": "^3.7.0"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.14",
-		"@types/react-syntax-highlighter": "^15.5.13"
+		"@types/react": "^19.2.14"
 	}
 }

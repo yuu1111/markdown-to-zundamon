@@ -1,8 +1,15 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
 *.tsbuildinfo
+
+# Generated assets
 out/
 projects/
 packages/video/public/projects/
 packages/video/public/characters/
+
+# Environment
 .env

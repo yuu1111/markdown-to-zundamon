@@ -63,6 +63,11 @@ export async function copyLocalImage(
 
 	fs.mkdirSync(destDir, { recursive: true });
 	const destPath = path.join(destDir, destName);
+
+	if (await Bun.file(destPath).exists()) {
+		return destName;
+	}
+
 	await Bun.write(destPath, Bun.file(srcPath));
 	return destName;
 }

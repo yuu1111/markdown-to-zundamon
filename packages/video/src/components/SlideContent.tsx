@@ -1,28 +1,87 @@
-import type React from "react";
+import { type FC, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import * as prismStyles from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
-import { Img, staticFile } from "remotion";
+import { Img, staticFile, useDelayRender } from "remotion";
+import { createHighlighter, type Highlighter } from "shiki";
 
-type PrismStyle = Record<string, React.CSSProperties>;
-const THEMES: Record<string, PrismStyle> = prismStyles as unknown as Record<
-	string,
-	PrismStyle
->;
+/**
+ * @description プリロードする言語一覧
+ */
+const PRELOADED_LANGS = [
+	"javascript",
+	"typescript",
+	"jsx",
+	"tsx",
+	"python",
+	"go",
+	"rust",
+	"java",
+	"c",
+	"cpp",
+	"csharp",
+	"json",
+	"yaml",
+	"toml",
+	"bash",
+	"shell",
+	"powershell",
+	"html",
+	"css",
+	"sql",
+	"markdown",
+	"xml",
+	"diff",
+] as const;
 
+/**
+ * @description Shikiハイライターを非同期ロードし、delayRenderで待機する
+ * @param theme - Shikiテーマ名
+ * @returns ロード済みのHighlighterインスタンス(ロード中はnull)
+ */
+function useShikiHighlighter(theme: string): Highlighter | null {
+	const { delayRender, continueRender, cancelRender } = useDelayRender();
+	const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
+	const handleRef = useRef<ReturnType<typeof delayRender> | null>(null);
+
+	useEffect(() => {
+		const handle = delayRender(`Loading Shiki highlighter: ${theme}`);
+		handleRef.current = handle;
+
+		createHighlighter({
+			themes: [theme],
+			langs: [...PRELOADED_LANGS],
+		})
+			.then((h) => {
+				setHighlighter(h);
+				continueRender(handle);
+			})
+			.catch((err) => {
+				cancelRender(err);
+			});
+	}, [theme]);
+
+	return highlighter;
+}
+
+/**
+ * @description SlideContentコンポーネントのprops
+ * @property markdown - 表示するMarkdown文字列
+ * @property fontFamily - フォントファミリー
+ * @property codeHighlightTheme - Shikiテーマ名 @optional @default "one-light"
+ */
 interface Props {
 	markdown: string;
 	fontFamily: string;
 	codeHighlightTheme?: string;
 }
 
-export const SlideContent: React.FC<Props> = ({
+export const SlideContent: FC<Props> = ({
 	markdown,
 	fontFamily,
-	codeHighlightTheme = "oneLight",
+	codeHighlightTheme = "one-light",
 }) => {
-	const codeStyle = THEMES[codeHighlightTheme] ?? THEMES.oneLight;
+	const highlighter = useShikiHighlighter(codeHighlightTheme);
+
 	return (
 		<div
 			style={{
@@ -121,20 +180,30 @@ export const SlideContent: React.FC<Props> = ({
 						pre: ({ children }) => <>{children}</>,
 						code: ({ className, children }) => {
 							const match = /language-(\w+)/.exec(className ?? "");
-							if (match) {
+							if (match && highlighter) {
+								const lang = match[1] as string;
+								const loadedLangs = highlighter.getLoadedLanguages();
+								const effectiveLang = loadedLangs.includes(lang)
+									? lang
+									: "plaintext";
+								const html = highlighter.codeToHtml(
+									String(children).replace(/\n$/, ""),
+									{
+										lang: effectiveLang,
+										theme: codeHighlightTheme,
+									},
+								);
 								return (
-									<SyntaxHighlighter
-										language={match[1]}
-										style={codeStyle}
-										customStyle={{
+									<div
+										dangerouslySetInnerHTML={{ __html: html }}
+										style={{
 											borderRadius: 12,
 											fontSize: "0.75em",
 											lineHeight: 1.5,
 											marginBottom: 16,
+											overflow: "hidden",
 										}}
-									>
-										{String(children).replace(/\n$/, "")}
-									</SyntaxHighlighter>
+									/>
 								);
 							}
 							return (

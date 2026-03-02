@@ -1,13 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { downloadRemoteImage } from "@markdown-to-zundamon/core/assets";
+import { env } from "@markdown-to-zundamon/core/config";
 import {
 	PROJECTS_DIR,
 	VIDEO_PUBLIC_DIR,
 } from "@markdown-to-zundamon/core/paths";
-import { Readability } from "@mozilla/readability";
-import { parseHTML } from "linkedom";
-import TurndownService from "turndown";
+import { Defuddle } from "defuddle/node";
 import { generateScript } from "./lib/llm";
 
 /**
@@ -18,11 +17,6 @@ characters:
   - name: ずんだもん
     speakerId: 3
 ---`;
-
-/**
- * @description LLM モデルのデフォルト指定
- */
-const DEFAULT_MODEL = "google:gemini-2.5-flash";
 
 /**
  * @description URLをバリデーションしてURLオブジェクトを返す
@@ -70,39 +64,6 @@ function sanitize(text: string): string {
 }
 
 /**
- * @description HTMLからReadabilityで本文を抽出する
- */
-function extractArticle(
-	html: string,
-	url: string,
-): { title: string; content: string } {
-	const { document } = parseHTML(html);
-	// ReadabilityはbaseURIを参照するため設定
-	Object.defineProperty(document, "baseURI", { value: url });
-
-	const reader = new Readability(document);
-	const article = reader.parse();
-	if (!article) {
-		throw new Error(
-			"記事本文を抽出できませんでした。Readabilityが解析に失敗しました。",
-		);
-	}
-	return { title: article.title ?? "", content: article.content ?? "" };
-}
-
-/**
- * @description HTML→Markdown変換用のTurndownServiceを生成する
- */
-function createTurndown(): TurndownService {
-	const td = new TurndownService({
-		headingStyle: "atx",
-		codeBlockStyle: "fenced",
-		bulletListMarker: "-",
-	});
-	return td;
-}
-
-/**
  * @description CLI引数を解析する
  */
 function parseArgs(argv: string[]): {
@@ -111,7 +72,7 @@ function parseArgs(argv: string[]): {
 } {
 	const args = argv.slice(2);
 	let url: string | undefined;
-	let model: string = process.env.LLM_MODEL ?? DEFAULT_MODEL;
+	let model: string = env.LLM_MODEL;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? "";
@@ -185,13 +146,10 @@ async function main(): Promise<void> {
 	console.log(`  HTML: ${html.length.toLocaleString()} chars`);
 
 	console.log("Extracting article...");
-	const { title, content } = extractArticle(html, url.href);
+	const result = await Defuddle(html, url.href, { markdown: true });
+	const title = result.title ?? "";
+	const rawMarkdown = result.content;
 	console.log(`  Title: ${title}`);
-	console.log(`  Content: ${content.length.toLocaleString()} chars`);
-
-	console.log("Converting HTML to Markdown...");
-	const td = createTurndown();
-	const rawMarkdown = td.turndown(content);
 	console.log(`  Markdown: ${rawMarkdown.split("\n").length} lines`);
 
 	console.log("Generating script with LLM...");
