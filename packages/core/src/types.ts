@@ -27,7 +27,7 @@ export const ManifestConfigSchema = z.object({
 	fontFamily: z.string().default("M PLUS Rounded 1c"),
 	subtitleFontFamily: z.string().optional(),
 	slideFontFamily: z.string().optional(),
-	codeHighlightTheme: z.string().default("oneLight"),
+	codeHighlightTheme: z.string().default("one-light"),
 });
 
 export const SegmentSchema = z.object({
