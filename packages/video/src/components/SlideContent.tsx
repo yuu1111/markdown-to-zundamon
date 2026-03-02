@@ -1,8 +1,26 @@
-import { type FC, useEffect, useRef, useState } from "react";
+import {
+	createContext,
+	type FC,
+	useContext,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Img, staticFile, useDelayRender } from "remotion";
 import { createHighlighter, type Highlighter } from "shiki";
+
+/**
+ * @description リストの種別とカウンターを子コンポーネントに伝播するコンテキスト
+ */
+const ListContext = createContext<{
+	type: "ul" | "ol";
+	counter: { value: number };
+}>({
+	type: "ul",
+	counter: { value: 0 },
+});
 
 /**
  * @description プリロードする言語一覧
@@ -34,13 +52,26 @@ const PRELOADED_LANGS = [
 ] as const;
 
 /**
+ * @description useShikiHighlighter の戻り値
+ * @property highlighter - Shikiインスタンス(ロード中はnull)
+ * @property loadedLangs - ロード済み言語の Set
+ */
+interface ShikiState {
+	highlighter: Highlighter | null;
+	loadedLangs: Set<string>;
+}
+
+/**
  * @description Shikiハイライターを非同期ロードし、delayRenderで待機する
  * @param theme - Shikiテーマ名
- * @returns ロード済みのHighlighterインスタンス(ロード中はnull)
+ * @returns ハイライターとロード済み言語のSet
  */
-function useShikiHighlighter(theme: string): Highlighter | null {
+function useShikiHighlighter(theme: string): ShikiState {
 	const { delayRender, continueRender, cancelRender } = useDelayRender();
-	const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
+	const [state, setState] = useState<ShikiState>({
+		highlighter: null,
+		loadedLangs: new Set(),
+	});
 	const handleRef = useRef<ReturnType<typeof delayRender> | null>(null);
 
 	useEffect(() => {
@@ -52,7 +83,10 @@ function useShikiHighlighter(theme: string): Highlighter | null {
 			langs: [...PRELOADED_LANGS],
 		})
 			.then((h) => {
-				setHighlighter(h);
+				setState({
+					highlighter: h,
+					loadedLangs: new Set(h.getLoadedLanguages()),
+				});
 				continueRender(handle);
 			})
 			.catch((err) => {
@@ -60,7 +94,7 @@ function useShikiHighlighter(theme: string): Highlighter | null {
 			});
 	}, [theme]);
 
-	return highlighter;
+	return state;
 }
 
 /**
@@ -80,7 +114,7 @@ export const SlideContent: FC<Props> = ({
 	fontFamily,
 	codeHighlightTheme = "one-light",
 }) => {
-	const highlighter = useShikiHighlighter(codeHighlightTheme);
+	const { highlighter, loadedLangs } = useShikiHighlighter(codeHighlightTheme);
 
 	return (
 		<div
@@ -161,17 +195,30 @@ export const SlideContent: FC<Props> = ({
 							</div>
 						),
 						ul: ({ children }) => (
-							<div style={{ paddingLeft: 40 }}>{children}</div>
+							<ListContext.Provider
+								value={{ type: "ul", counter: { value: 0 } }}
+							>
+								<div style={{ paddingLeft: 40 }}>{children}</div>
+							</ListContext.Provider>
 						),
 						ol: ({ children }) => (
-							<div style={{ paddingLeft: 40 }}>{children}</div>
+							<ListContext.Provider
+								value={{ type: "ol", counter: { value: 0 } }}
+							>
+								<div style={{ paddingLeft: 40 }}>{children}</div>
+							</ListContext.Provider>
 						),
-						li: ({ children }) => (
-							<div style={{ marginBottom: 12, display: "flex", gap: 16 }}>
-								<span>•</span>
-								<span>{children}</span>
-							</div>
-						),
+						li: ({ children }) => {
+							const ctx = useContext(ListContext);
+							ctx.counter.value++;
+							const marker = ctx.type === "ol" ? `${ctx.counter.value}.` : "•";
+							return (
+								<div style={{ marginBottom: 12, display: "flex", gap: 16 }}>
+									<span>{marker}</span>
+									<span>{children}</span>
+								</div>
+							);
+						},
 						strong: ({ children }) => (
 							<span style={{ fontWeight: 700, color: "#2e7d32" }}>
 								{children}
@@ -182,8 +229,7 @@ export const SlideContent: FC<Props> = ({
 							const match = /language-(\w+)/.exec(className ?? "");
 							if (match && highlighter) {
 								const lang = match[1] as string;
-								const loadedLangs = highlighter.getLoadedLanguages();
-								const effectiveLang = loadedLangs.includes(lang)
+								const effectiveLang = loadedLangs.has(lang)
 									? lang
 									: "plaintext";
 								const html = highlighter.codeToHtml(

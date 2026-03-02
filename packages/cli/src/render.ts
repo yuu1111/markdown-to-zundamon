@@ -5,14 +5,9 @@ import {
 	VIDEO_PACKAGE_DIR,
 	VIDEO_PUBLIC_DIR,
 } from "@markdown-to-zundamon/core/paths";
+import { parseProjectName } from "./lib/args";
 
-const rawArg = process.argv[2];
-if (!rawArg) {
-	console.error("Usage: bun run render -- <project-name>");
-	console.error("Example: bun run render -- example");
-	process.exit(1);
-}
-const projectName = path.basename(rawArg, path.extname(rawArg));
+const projectName = parseProjectName("render");
 
 const manifestPath = path.join(
 	VIDEO_PUBLIC_DIR,

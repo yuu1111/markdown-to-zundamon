@@ -8,6 +8,11 @@ import { VoicevoxEngine } from "./voicevox";
  */
 export interface TtsEngine {
 	/**
+	 * @description エンジン種別名(キャッシュキー等に使用)
+	 */
+	readonly name: "voicevox" | "coeiroink";
+
+	/**
 	 * @description キャラクターの TTS 設定を検証する
 	 * @param character - 検証対象のキャラクター
 	 * @throws 必要なフィールドが欠けている場合

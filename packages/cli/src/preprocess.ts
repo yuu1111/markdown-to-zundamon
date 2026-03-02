@@ -67,7 +67,6 @@ function getWavDurationSec(filePath: string): number {
  * @param text - 合成するテキスト
  * @param character - キャラクター設定
  * @param ttsEngine - TTS エンジンインスタンス
- * @param engineName - エンジン種別(キャッシュキー用)
  * @param audioDir - 音声ファイルの出力ディレクトリ
  * @param projectName - プロジェクト名
  * @returns 音声ファイルのパスと再生時間
@@ -76,15 +75,14 @@ async function synthesize(
 	text: string,
 	character: Character,
 	ttsEngine: TtsEngine,
-	engineName: "voicevox" | "coeiroink",
 	audioDir: string,
 	projectName: string,
 ): Promise<{ audioPath: string; durationSec: number }> {
 	const speakerKey =
-		engineName === "coeiroink"
+		ttsEngine.name === "coeiroink"
 			? `${character.speakerUuid}:${character.styleId}`
 			: `${character.speakerId}`;
-	const hash = shortHash(`${engineName}:${speakerKey}:${text}`);
+	const hash = shortHash(`${ttsEngine.name}:${speakerKey}:${text}`);
 	const sanitized = sanitizeForFilename(text);
 	const filename = `${hash}-${sanitized}.wav`;
 	const audioPath = path.join(audioDir, filename);
@@ -195,8 +193,18 @@ function processRubyTags(text: string): {
 	speechText: string;
 } {
 	const rubyRe = /<ruby>(.*?)<rt>(.*?)<\/rt><\/ruby>/g;
-	const displayText = text.replace(rubyRe, (_match, base) => base);
-	const speechText = text.replace(rubyRe, (_match, _base, reading) => reading);
+	let displayText = "";
+	let speechText = "";
+	let lastIndex = 0;
+	for (const match of text.matchAll(rubyRe)) {
+		const before = text.slice(lastIndex, match.index);
+		displayText += before + match[1];
+		speechText += before + match[2];
+		lastIndex = match.index + match[0].length;
+	}
+	const tail = text.slice(lastIndex);
+	displayText += tail;
+	speechText += tail;
 	return { displayText, speechText };
 }
 
@@ -466,7 +474,6 @@ async function main() {
 						ttsText,
 						synthCharacter,
 						ttsEngine,
-						config.engine,
 						audioDir,
 						projectName,
 					);

@@ -1,5 +1,6 @@
 import { loadDefaultJapaneseParser } from "budoux";
 import type React from "react";
+import { useMemo } from "react";
 
 interface Props {
 	text: string;
@@ -14,7 +15,7 @@ const parser = loadDefaultJapaneseParser();
 
 /** BudouX で分割したセグメントを word-break: keep-all で折り返す */
 const SegmentedText: React.FC<{ text: string }> = ({ text }) => {
-	const segments = parser.parse(text);
+	const segments = useMemo(() => parser.parse(text), [text]);
 	return (
 		<span style={{ wordBreak: "keep-all" }}>
 			{segments.map((seg, i) => (

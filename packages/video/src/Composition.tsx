@@ -31,10 +31,13 @@ function useGoogleFonts(fontNames: string[]): Map<string, string> {
 	);
 	const handleRef = useRef<ReturnType<typeof delayRender> | null>(null);
 
-	const key = [...new Set(fontNames)].sort().join(",");
+	const uniqueNames = useMemo(
+		() => [...new Set(fontNames)].sort(),
+		[fontNames.join(",")],
+	);
+	const key = uniqueNames.join(",");
 
 	useEffect(() => {
-		const uniqueNames = [...new Set(fontNames)];
 		if (uniqueNames.length === 0) return;
 
 		const handle = delayRender(`Loading fonts: ${uniqueNames.join(", ")}`);
@@ -108,19 +111,13 @@ export const ZundamonComposition: React.FC<Record<string, unknown>> = (
 		return result;
 	}, [segments]);
 
-	// Find current slide: last slide segment whose startFrame <= current frame
 	let currentSlideMarkdown: string | null = null;
-	for (const entry of timeline) {
-		if (entry.segment.type === "slide" && entry.startFrame <= frame) {
-			currentSlideMarkdown = entry.segment.markdown ?? entry.segment.text;
-		}
-	}
-
-	// Find current speech segment for subtitle and active character
 	let currentSpeechText: string | null = null;
 	let currentSpeechCharacter: string | null = null;
 	for (const entry of timeline) {
-		if (
+		if (entry.segment.type === "slide" && entry.startFrame <= frame) {
+			currentSlideMarkdown = entry.segment.markdown ?? entry.segment.text;
+		} else if (
 			entry.segment.type === "speech" &&
 			frame >= entry.startFrame &&
 			frame < entry.startFrame + entry.segment.durationInFrames

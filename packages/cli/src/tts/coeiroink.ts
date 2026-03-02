@@ -5,6 +5,8 @@ import type { TtsEngine } from "./engine";
  * @description Coeiroink API を使用した TTS エンジン実装
  */
 export class CoeiroinkEngine implements TtsEngine {
+	readonly name = "coeiroink" as const;
+
 	/**
 	 * @description CoeiroinkEngine を初期化する
 	 * @param baseUrl - Coeiroink API のベース URL

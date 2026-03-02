@@ -5,6 +5,8 @@ import type { TtsEngine } from "./engine";
  * @description VOICEVOX API を使用した TTS エンジン実装
  */
 export class VoicevoxEngine implements TtsEngine {
+	readonly name = "voicevox" as const;
+
 	/**
 	 * @description VoicevoxEngine を初期化する
 	 * @param baseUrl - VOICEVOX API のベース URL
