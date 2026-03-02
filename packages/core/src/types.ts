@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-// Zod schemas
 export const CharacterSchema = z.object({
 	name: z.string(),
 	speakerId: z.number().optional(),
@@ -21,7 +20,6 @@ export const ManifestConfigSchema = z.object({
 	fps: z.number().default(30),
 	width: z.number().default(1920),
 	height: z.number().default(1080),
-	speakerId: z.number().default(3),
 	characters: z.array(CharacterSchema).min(1),
 	slideTransitionMs: z.number().default(600),
 	speechGapMs: z.number().default(200),
@@ -29,7 +27,7 @@ export const ManifestConfigSchema = z.object({
 	fontFamily: z.string().default("M PLUS Rounded 1c"),
 	subtitleFontFamily: z.string().optional(),
 	slideFontFamily: z.string().optional(),
-	codeHighlightTheme: z.string().default("oneLight"),
+	codeHighlightTheme: z.string().default("one-light"),
 });
 
 export const SegmentSchema = z.object({

@@ -1,17 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	OUT_DIR,
+	VIDEO_PACKAGE_DIR,
+	VIDEO_PUBLIC_DIR,
+} from "@markdown-to-zundamon/core/paths";
+import { parseProjectName } from "./lib/args";
 
-const rawArg = process.argv[2];
-if (!rawArg) {
-	console.error("Usage: bun run render -- <project-name>");
-	console.error("Example: bun run render -- example");
-	process.exit(1);
-}
-const projectName = path.basename(rawArg, path.extname(rawArg));
+const projectName = parseProjectName("render");
 
-const manifestPath = path.resolve(
-	import.meta.dir,
-	`../public/projects/${projectName}/manifest.json`,
+const manifestPath = path.join(
+	VIDEO_PUBLIC_DIR,
+	`projects/${projectName}/manifest.json`,
 );
 if (!(await Bun.file(manifestPath).exists())) {
 	console.error(`Error: manifest not found at ${manifestPath}`);
@@ -19,10 +19,9 @@ if (!(await Bun.file(manifestPath).exists())) {
 	process.exit(1);
 }
 
-const outDir = path.resolve(import.meta.dir, "../out");
-fs.mkdirSync(outDir, { recursive: true });
+fs.mkdirSync(OUT_DIR, { recursive: true });
 
-const outFile = `out/${projectName}.mp4`;
+const outFile = path.join(OUT_DIR, `${projectName}.mp4`);
 const props = JSON.stringify({ projectName });
 
 console.log(`Rendering "${projectName}" → ${outFile}`);
@@ -32,7 +31,7 @@ const result = Bun.spawnSync(
 	{
 		stdout: "inherit",
 		stderr: "inherit",
-		cwd: path.resolve(import.meta.dir, ".."),
+		cwd: VIDEO_PACKAGE_DIR,
 	},
 );
 

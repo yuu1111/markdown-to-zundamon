@@ -1,7 +1,10 @@
+import {
+	CompositionPropsSchema,
+	ManifestSchema,
+} from "@markdown-to-zundamon/core/types";
 import type React from "react";
 import { Composition, staticFile } from "remotion";
 import { ZundamonComposition } from "./Composition";
-import { CompositionPropsSchema, ManifestSchema } from "./types";
 
 export const RemotionRoot: React.FC = () => {
 	return (

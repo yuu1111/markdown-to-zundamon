@@ -1,0 +1,22 @@
+{
+	"name": "@markdown-to-zundamon/cli",
+	"version": "1.0.0",
+	"private": true,
+	"dependencies": {
+		"@11ty/gray-matter": "^2.0.1",
+		"@ai-sdk/google": "^3.0.34",
+		"@markdown-to-zundamon/core": "workspace:*",
+		"ai": "^6.0.105",
+		"defuddle": "^0.7.0",
+		"jsdom": "^28.1.0",
+		"mdast-util-to-string": "^4.0.0",
+		"remark-parse": "^11.0.0",
+		"remark-stringify": "^11.0.0",
+		"unified": "^11.0.5"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.9",
+		"@types/jsdom": "^28.0.0",
+		"@types/mdast": "^4.0.4"
+	}
+}

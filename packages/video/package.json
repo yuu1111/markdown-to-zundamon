@@ -1,0 +1,18 @@
+{
+	"name": "@markdown-to-zundamon/video",
+	"version": "1.0.0",
+	"private": true,
+	"dependencies": {
+		"@markdown-to-zundamon/core": "workspace:*",
+		"@remotion/cli": "4.0.431",
+		"@remotion/google-fonts": "4.0.431",
+		"budoux": "^0.7.0",
+		"react-markdown": "^10.1.0",
+		"remark-gfm": "^4.0.1",
+		"remotion": "4.0.431",
+		"shiki": "^3.7.0"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.14"
+	}
+}
